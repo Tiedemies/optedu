@@ -211,7 +211,7 @@ For the **min** standard form ( \min c^T x \ \text{s.t.}\ Ax=b,\ x\ge0 ): solve 
 * For higher-D NL problems: the runner shows a PCA trajectory and a values plot.
 * LPs have no contours; the runner prints structured status + numbers (and rays when unbounded).
 
-## Repository structure (suggested)
+## Repository structure (incomplete, to be updated)
 
 ```
 optedu/
@@ -238,7 +238,7 @@ optedu/
 └─ README.md
 ```
 
-## Testing
+## Testing (not currently functional) 
 
 ```bash
 pytest -q
