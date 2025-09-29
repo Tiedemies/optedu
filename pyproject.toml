@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "optedu"
+version = "0.1.0"
+description = "Pedagogical optimization toolkit with running examples and visualizations."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{name = "Your Name", email = "you@example.com"}]
+license = "MIT"
+dependencies = [
+  "numpy>=1.22",
+  "matplotlib>=3.6"
+]
+
+[tool.setuptools]
+# declare only this package
+packages = ["optedu"]
+
+# If you later add non-Python data files inside optedu/, configure include-package-data = true
+# and MANIFEST.in or tool.setuptools.package-data accordingly.

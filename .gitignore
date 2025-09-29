@@ -1,0 +1,67 @@
+# --- Python bytecode / cache ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.pch
+
+# --- Packaging / build artifacts ---
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+*.whl
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+ENV/
+*.env
+*.venv
+
+# --- Test / coverage / caches ---
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+
+# --- Jupyter / notebooks ---
+.ipynb_checkpoints/
+*.ipynb_meta
+
+# --- IDE / editor junk ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- OS files ---
+.DS_Store
+Thumbs.db
+
+# --- App / project outputs (adjust as you like) ---
+results/
+outputs/
+*.png
+*.pdf
+*.json
+
+# --- Logs ---
+*.log
+
+# --- Local configs you don’t want in VCS (uncomment if you have these) ---
+# .env.local
+# .envrc
+
+# --- Misc ---
+*.bak
+*.tmp
+
