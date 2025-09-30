@@ -1,39 +1,121 @@
-import numpy as np
-from typing import Callable, Tuple, Optional
-from ..utils.types import History, ensure_array
-from .linesearch import backtracking_armijo, exact_quadratic_step, exact_line_search
+# optedu/algorithms/gradient_descent.py
+# -------------------------------------------------------------------
+# Gradient Descent (steepest descent) for unconstrained minimization
+# [S4] comments map to Chapter 4 generic schema stages.
+# -------------------------------------------------------------------
 
-def gradient_descent(f: Callable[[np.ndarray], float],
-                     grad: Callable[[np.ndarray], np.ndarray],
-                     x0, step: str = "backtracking",
-                     c1: float = 1e-4, rho: float = 0.5, t0: float = 1.0,
-                     maxit: int = 500, tol: float = 1e-8,
-                     callback=None, Q_for_exact: Optional[np.ndarray] = None) -> Tuple[np.ndarray, History]:
-    x = ensure_array(x0)
-    hist = History()
-    for k in range(maxit):
-        g = grad(x)
-        ng = np.linalg.norm(g)
-        fval = float(f(x))
-        # (optional) store gradient vector if you want to check orthogonality
-        # hist.append(x=x.copy(), f=fval, grad_norm=ng, grad=g.copy())
-        hist.append(x=x.copy(), f=fval, grad_norm=ng)
-        if callback is not None:
-            callback(x, fval, k, hist)
-        if ng < tol:
+from __future__ import annotations
+from typing import Callable, Dict, Any, Literal
+import numpy as np
+
+from ..utils.types import History, ensure_array   # History is the dict-like recorder used across the course
+from .linesearch import backtracking_armijo, exact_line_search
+
+Array = np.ndarray
+Objective = Callable[[Array], float]
+Gradient  = Callable[[Array], Array]
+StepPolicy = Literal["exact", "armijo"]
+
+
+def gradient_descent(
+    *,
+    f: Objective,
+    grad: Gradient,
+    x0,
+    # ------------------------ [S4] Inputs / Hyperparameters ------------------------
+    maxit: int = 2000,              # hard iteration cap (safety net)
+    tol: float = 1e-8,              # gradient-norm tolerance for convergence
+    step_policy: StepPolicy = "exact",  # default: attempt exact line search first
+    # Armijo parameters (used if step_policy='armijo' or exact step is unusable)
+    c1: float = 1e-4,
+    rho: float = 0.5,
+    t0: float = 1.0,
+) -> Dict[str, Any]:
+    """
+    Gradient Descent with exact line search by default (via linesearch.exact_line_search),
+    falling back to Armijo backtracking (linesearch.backtracking_armijo) if the exact step
+    is not available or not usable (non-finite or non-positive).
+
+    Returns (unified schema; no duplication):
+        {
+          "status": "converged" | "maxit" | "failed",
+          "x": ndarray,           # final iterate (approximate minimizer)
+          "f": float,             # objective value at x (under the problem's own sense)
+          "history": History,     # the single history container (keys: f, x, grad_norm, step, meta)
+          "counts": {"nit": int}  # iterations performed (successful updates)
+        }
+    """
+
+    # -------------------------------- [S4] Initialization --------------------------------
+    x: Array = ensure_array(x0)     # current iterate x_k
+    history = History()             # unified recorder: stores series f, x, grad_norm, step, meta
+    nit = 0                         # iteration counter (number of successful updates)
+
+    # Evaluate once at the starting point and log it into history.
+    #   fx : scalar f(x_k)
+    #   g  : gradient ∇f(x_k)
+    #   ng : gradient norm ||∇f(x_k)|| (first-order stationarity proxy)
+    fx = float(f(x))
+    g  = grad(x)
+    ng = float(np.linalg.norm(g))
+    history.append(x=x.copy(), f=fx, grad_norm=ng)   # no step recorded for the initial state
+
+    status = "maxit"   # default; will switch to "converged" if the tolerance is met
+    # message optional; omitted to keep the return minimal per unified contract
+
+    # --------------------------------- Main iteration loop ---------------------------------
+    while nit < maxit:
+        # ------------------------------- [S4] Stopping (pre-check) -------------------------------
+        # If we are already stationary at the current x, we declare convergence.
+        if ng <= tol:
+            status = "converged"
             break
+
+        # ------------------------------------ [S4] Direction ------------------------------------
+        # Steepest descent direction: d_k = -∇f(x_k)
         d = -g
-        if step == "backtracking":
+
+        # ------------------------------------ [S4] Step-size -----------------------------------
+        # Default policy tries an exact line search; if unusable, we fall back to Armijo.
+        # exact_line_search is assumed to have signature exact_line_search(f, x, d).
+        t = None
+        if step_policy == "exact":
+            try:
+                t_candidate = float(exact_line_search(f, x, d))
+                if np.isfinite(t_candidate) and t_candidate > 0.0:
+                    t = t_candidate
+            except Exception:
+                t = None
+
+        if t is None or step_policy == "armijo":
+            # Armijo backtracking uses (f, grad, x, d, c1, rho, t0).
+            # We rely on the linesearch helper; we do not try to replicate its internal logic here.
             t = backtracking_armijo(f, grad, x, d, c1=c1, rho=rho, t0=t0)
-        elif step == "constant":
-            t = float(t0)
-        elif step == "exact_quadratic":
-            if Q_for_exact is None:
-                raise ValueError("Provide Q_for_exact for exact quadratic step.")
-            t = exact_quadratic_step(Q_for_exact, g, d)
-        elif step == "exact_numeric":
-            t = exact_line_search(f, x, d, t_init=1.0, shrink=0.5, grow=2.0, tol=1e-8, maxit=200)
-        else:
-            raise ValueError("Unknown step rule.")
+
+        # ------------------------------------ [S4] Update --------------------------------------
+        # Apply the step: x_{k+1} = x_k + t_k d_k
         x = x + t * d
-    return x, hist
+
+        # Recompute oracle at the new point and log aligned entries into the single history.
+        fx = float(f(x))
+        g  = grad(x)
+        ng = float(np.linalg.norm(g))
+        history.append(x=x.copy(), f=fx, grad_norm=ng, step=float(t))
+
+        # ------------------------------- [S4] Stopping (post-update) ----------------------------
+        if ng <= tol:
+            status = "converged"
+            nit += 1   # count this successful update
+            break
+
+        nit += 1
+
+    # ------------------------------------ [S4] Outputs ----------------------------------------
+    # We return exactly the unified structure. History is the single source of truth for traces.
+    return {
+        "status": status,
+        "x": x,
+        "f": float(history["f"][-1]),
+        "history": history,
+        "counts": {"nit": nit},
+    }

@@ -1,8 +1,8 @@
 # tests/test_unconstrained.py
 import numpy as np
 
-from optedu.algorithms.gradient_descent import gradient_descent  # type: ignore
-from optedu.algorithms.newton import newton_method  # type: ignore
+from optedu.algorithms.gradient_descent import gradient_descent  # unified: dict with history
+from optedu.algorithms.newton import newton_method               # unified: dict with history
 
 def quad_data(n=3):
     # Strongly convex quadratic: f(x) = 0.5 x^T Q x - b^T x
@@ -14,23 +14,23 @@ def quad_data(n=3):
     x_star = np.linalg.solve(Q, b)
     def f(x):
         x = np.asarray(x, float)
-        return 0.5 * x @ (Q @ x) - b @ x
+        return 0.5 * float(x @ (Q @ x)) - float(b @ x)
     def grad(x):
         x = np.asarray(x, float)
         return Q @ x - b
     def hess(x):
+        _ = x
         return Q
     return f, grad, hess, x_star
 
 def test_gradient_descent_linear_rate_on_spd_quadratic():
     f, grad, _, x_star = quad_data(n=4)
     x0 = np.ones(4) * 3.0
-    # Use "exact" step (1/L) or internal line search, as implemented
     out = gradient_descent(f=f, grad=grad, x0=x0, maxit=500, tol=1e-10)
     assert out["status"] == "converged"
     assert np.linalg.norm(out["x"] - x_star) < 1e-6
-    # Monotone decrease in f:
-    vals = np.asarray(out.get("f_hist", []), float)
+    # Monotone (non-increasing) decrease in f from history
+    vals = np.asarray(out["history"].get("f", []), float)
     if len(vals) > 1:
         assert np.all(vals[1:] <= vals[:-1] + 1e-12)
 

@@ -91,3 +91,14 @@ def simulated_annealing(
         "status": "converged" if iters > 0 else "maxit",
         "history": history,
     }
+
+### Unified public API wrapper -------------------------------------------
+from ..utils.types import pack_result, _ensure_history_dict
+
+def simulated_annealing_unified(*, f, x0, **kwargs):
+    out = simulated_annealing(f=f, x0=x0, **kwargs)  # existing function
+    hist = _ensure_history_dict(f=out.get("history"))
+    return pack_result(status=out.get("status","converged"),
+                       x=out.get("best_x"), f=out.get("best_value"),
+                       nit=out.get("nit"), history=hist)
+
