@@ -1,34 +1,16 @@
-# optedu/algorithms/lp/simplex_standard.py
+# optedu/algorithms/lp_simplex.py
 # -------------------------------------------------------------------
 # Primal simplex for STANDARD FORM:
 #     min c^T x   s.t.  A x = b,  x >= 0
-#
-# This implementation is written to comport with the material:
-# - "Page 43" Simplex loop steps are annotated explicitly.
-# - We work with a general feasible basis B (A_B invertible, x_B = A_B^{-1} b >= 0).
-# - When the ratio test fails (direction has no negative basic component), we
-#   raise a typed UnboundedSimplex that contains a *recession direction* d
-#   satisfying A d = 0 and c^T d < 0 (for MIN), constructed from the entering
-#   column j and d_B = -A_B^{-1} a_j, with d_j = 1 and d_N\{j} = 0.
-# -------------------------------------------------------------------
 
 from __future__ import annotations
 import numpy as np
 from typing import Dict, Any, List, Optional, Tuple
+from utils.types import History, LPExtras, AlgoResult, Status
+from problems.lp import LP
 
 
-class UnboundedSimplex(RuntimeError):
-    """Typed signal for unboundedness carrying a feasible recession direction."""
-    def __init__(self, message: str, *, ray: np.ndarray, entering: int,
-                 basis: np.ndarray, x_B: np.ndarray, reduced_cost: float):
-        super().__init__(message)
-        self.ray = ray                  # full n-vector d with A d = 0
-        self.entering = entering        # entering column index j
-        self.basis = basis              # current basis indices B
-        self.x_B = x_B                  # current basic values (feasible)
-        self.reduced_cost = reduced_cost  # r_j < 0 for MIN
-
-
+## Find identity
 def _find_identity_basis(A: np.ndarray, b: np.ndarray, tol: float = 1e-10) -> Optional[List[int]]:
     m, n = A.shape
     if np.any(b < -tol):
@@ -50,7 +32,7 @@ def _find_identity_basis(A: np.ndarray, b: np.ndarray, tol: float = 1e-10) -> Op
             return None
     return basis
 
-
+## The simplex_standard takes in  A, b, c, and an optional basis and returen AlgoResult with LPExtras
 def simplex_standard(
     A: np.ndarray,
     b: np.ndarray,
@@ -79,12 +61,16 @@ def simplex_standard(
     m, n = A.shape
     if b.shape != (m,) or c.shape != (n,):
         raise ValueError("Dimension mismatch in simplex_standard.")
-
+    
+    result = AlgoResult()
+    result.status = "failed"
+    result.lp = LPExtras()
+   
     # [P43:1] Choose feasible base unless it has been provided. 
     if basis is None:
         basis = _find_identity_basis(A, b, tol=1e-10)
         if basis is None:
-            raise RuntimeError("Provide a feasible basis or run Phase I first.")
+            return result
     B = np.array(basis, dtype=int)
     N = np.array([j for j in range(n) if j not in set(B)], dtype=int)
 
@@ -124,6 +110,10 @@ def simplex_standard(
         # [P43:4] Optimality (MIN): All reduced costs >= -tol. We don't compare to 0
         # directly to avoid numerical noise issues.
         if np.all(r_N >= -tol):
+            result.status = "converged"
+            result.x = x
+            result.f = f_val
+            result.history = History(f=hist_f, x=hist_basis, meta={"enter_leave": hist_pivots})
             break
 
         # [P43:5] Find an index with r_j < -tol (first such index)
@@ -131,7 +121,6 @@ def simplex_standard(
         jN_rel = int(neg_idx.min())
         j_enter = int(N[jN_rel])
         a_j = A[:, j_enter]
-        rj = float(r_N[jN_rel])
         #print(f"Entering index: {j_enter} with reduced cost {rj}")
 
         # [P43:6] Direction/unbounded  (construct d_B = -A_B^{-1} a_j) d_B is the a* from the notes
@@ -153,10 +142,12 @@ def simplex_standard(
             # Sanity: A d ≈ 0; objective slope = c^T d = r_j < 0 (for MIN)
             # Raise typed exception with the witness ray
             # print("Unbounded direction found (no leaving variable).")
-            raise UnboundedSimplex(
-                "Unbounded: no leaving variable (direction nonnegative in all basic components).",
-                ray=d, entering=j_enter, basis=B.copy(), x_B=x_B.copy(), reduced_cost=rj
+            result.status = "unbounded"
+            result.lp = LPExtras(
+                basis=B.copy(), direction=d
             )
+            result.history = History(f=hist_f, x=hist_basis, meta={"enter_leave": hist_pivots})
+            break
 
         # [P43:7] Ratio test, to find the index in B to leave the basis. 
         ratios = np.full(m, np.inf, dtype=float)
@@ -168,11 +159,11 @@ def simplex_standard(
             d = np.zeros(n, dtype=float)
             d[j_enter] = 1.0
             d[B] = d_B
-            raise UnboundedSimplex(
-                "Unbounded (no finite ratio).",
-                ray=d, entering=j_enter, basis=B.copy(), x_B=x_B.copy(), reduced_cost=rj
+            result.status = "unbounded"
+            result.lp = LPExtras(
+                basis=B.copy(), direction=d
             )
-        # print(f"Leaving index: {B[i_leave]} with ratio {theta}")
+        #print(f"Leaving index: {B[i_leave]} with ratio {theta}")
         # Pivot updates (values and basis indices) stored in history (not in the notes)
         x_B = x_B + theta * d_B
         x_B[i_leave] = theta
@@ -185,13 +176,12 @@ def simplex_standard(
 
         iters += 1
         if iters > maxit:
-            raise RuntimeError("Maximum iterations exceeded in simplex_standard.")
+            result.status = "maxit"
+            result.x = x
+            result.f = f_val
+            result.lp = LPExtras(basis=B.copy())
+            result.history = History(f=hist_f, x=hist_basis, meta={"enter_leave": hist_pivots})
+            break
 
-    x_star = np.zeros(n, dtype=float)
-    x_star[B] = x_B
-    info: Dict[str, Any] = {
-        "f": hist_f,
-        "basis": hist_basis,
-        "enter_leave": hist_pivots
-    }
-    return x_star, info
+    # Finalize result
+    return result 

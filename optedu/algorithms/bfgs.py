@@ -11,6 +11,7 @@ import numpy as np
 
 from ..utils.types import History, ensure_array          # History: dict-like recorder with .append(...)
 from .linesearch import backtracking_armijo, exact_line_search
+from ..utils.types import AlgoResult
 
 Array = np.ndarray
 Objective = Callable[[Array], float]
@@ -66,15 +67,20 @@ def bfgs(
     g  = grad(x);      njev = 1        # gradient at x_0
     ng = float(np.linalg.norm(g))      # gradient norm
 
+    result = AlgoResult()               # final output dict
+
     history.append(x=x.copy(), f=fx, grad_norm=ng)  # initial log (no step yet)
-    status = "maxit"
-    nit = 0
+    result.status = "maxit"
+    nit = 0 # Iteration counter
+    njev = 1 # gradient evaluations
+    nfev = 1 # function evaluations
+
 
     # --------------------------------- Main iteration loop ---------------------------------
     while nit < maxit:
         # ------------------------------- [S4] Stopping (pre-check) -------------------------------
         if ng <= tol:
-            status = "converged"
+            result.status = "converged"
             break
 
         # ------------------------------------ [S4] Direction ------------------------------------
@@ -122,17 +128,16 @@ def bfgs(
 
         # ------------------------------- [S4] Stopping (post-update) ----------------------------
         if ng <= tol:
-            status = "converged"
+            result.status = "converged"
             nit += 1
             break
 
         nit += 1
 
     # ------------------------------------ [S4] Outputs ----------------------------------------
-    return {
-        "status": status,
-        "x": x,
-        "f": float(history["f"][-1]),
-        "history": history,                 # single source of truth for traces
-        "counts": {"nit": nit, "nfev": nfev, "njev": njev},
-    }
+    result.status = result.status if result.status == "converged" else "maxit"
+    result.x = x
+    result.f = fx
+    result.history = history
+    result.counts = {"nit": nit, "nfev": nfev, "njev": njev}
+    return result

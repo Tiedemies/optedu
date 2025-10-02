@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Callable, Dict, Any, Literal
 import numpy as np
 
-from ..utils.types import History, ensure_array   # History is the dict-like recorder used across the course
+from ..utils.types import History, ensure_array, AlgoResult  # History is the dict-like recorder used across the course
 from .linesearch import backtracking_armijo, exact_line_search
 
 Array = np.ndarray
@@ -57,6 +57,7 @@ def gradient_descent(
     #   ng : gradient norm ||∇f(x_k)|| (first-order stationarity proxy)
     fx = float(f(x))
     g  = grad(x)
+    nfev = 1; njev = 1   # oracle call counts
     ng = float(np.linalg.norm(g))
     history.append(x=x.copy(), f=fx, grad_norm=ng)   # no step recorded for the initial state
 
@@ -97,8 +98,8 @@ def gradient_descent(
         x = x + t * d
 
         # Recompute oracle at the new point and log aligned entries into the single history.
-        fx = float(f(x))
-        g  = grad(x)
+        fx = float(f(x)); nfev += 1
+        g  = grad(x); njev += 1
         ng = float(np.linalg.norm(g))
         history.append(x=x.copy(), f=fx, grad_norm=ng, step=float(t))
 
@@ -112,10 +113,10 @@ def gradient_descent(
 
     # ------------------------------------ [S4] Outputs ----------------------------------------
     # We return exactly the unified structure. History is the single source of truth for traces.
-    return {
-        "status": status,
-        "x": x,
-        "f": float(history["f"][-1]),
-        "history": history,
-        "counts": {"nit": nit},
-    }
+    result = AlgoResult()
+    result.status = status
+    result.x = x
+    result.f = fx
+    result.history = history
+    result.counts = {"nit": nit, "nfev": nfev, "njev": njev}
+    return result

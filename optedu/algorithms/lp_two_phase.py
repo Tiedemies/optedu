@@ -14,10 +14,7 @@
 from __future__ import annotations
 import numpy as np
 from typing import Callable, Dict, Any, List, Tuple
-
-from .simplex_standard import UnboundedSimplex  # typed signal from the simplex
-
-SimplexFn = Callable[..., tuple]  # (x_star, info)
+from .lp_simplex import simplex_standard
 
 
 # (§3.3.2) Row sign normalization so that we can take a=b as feasible for artificials
@@ -94,7 +91,6 @@ def solve_two_phase(
     b: np.ndarray,
     c: np.ndarray,
     *,
-    simplex: SimplexFn,
     tol: float = 1e-9,
     maxit: int = 10000
 ) -> tuple[np.ndarray, Dict[str, Any]]:
@@ -112,7 +108,8 @@ def solve_two_phase(
     basis1_init = a_cols.copy()                  # artificial identity basis (feasible)
 
     # print("--- Phase I: Auxiliary Problem ---")
-    x1, info1 = simplex(A1, b1, c1, basis=basis1_init, tol=tol, maxit=maxit)
+    first_result = simplex_standard(A1, b1, c1, basis=basis1_init, tol=tol, maxit=maxit)
+    x1 = first_result.x
     phase1_value = float(np.sum(x1[n:]))        # sum of artificials at optimum
 
     if phase1_value > max(tol, 1e-8):
@@ -120,13 +117,13 @@ def solve_two_phase(
         return x1[:n], {
             "phase1_feasible": False,
             "phase1_value": phase1_value,
-            "phase1_basis": _extract_final_basis(info1),
+            "phase1_basis": first_result.lp.basis if first_result.lp else None,
             "status": "infeasible",
             "hist_phase2": {}
         }
 
     # ----- Phase I → Phase II: get a feasible basis for Ax=b, x>=0 -----
-    basis1 = _extract_final_basis(info1)        # indices over 0..n+m-1
+    basis1 = first_result.lp.basis if first_result.lp else basis1_init
     basis2 = _pivot_out_zero_artificials(A2, b2, basis1, a_cols, tol)
     # Prefer original columns in the Phase II warm start
     basis2_orig = [j for j in basis2 if j < n]
@@ -136,41 +133,5 @@ def solve_two_phase(
         basis2_orig += extras[:need]
     # print(f"Phase II basis (indices): {basis2_orig}")
     # ----- Phase II: run the same simplex on the original objective -----
-    try:
-        x2, info2 = simplex(A2, b2, c, basis=basis2_orig, tol=tol, maxit=maxit)
-        # print("--- Phase II: Optimal Solution Found ---")
-        return x2, {
-            "phase1_feasible": True,
-            "phase1_value": phase1_value,
-            "phase1_basis": basis1,
-            "phase2_basis": basis2_orig,
-            "status": "optimal",
-            "hist_phase2": info2
-        }
-
-    except UnboundedSimplex as ub:
-        B = np.array(basis2_orig, dtype=int)
-        A_B = A2[:, B]
-        try:
-            x_B = np.linalg.solve(A_B, b2)
-        except np.linalg.LinAlgError:
-            x_B = np.zeros(m)
-        x_feas = np.zeros(n)
-        x_feas[B] = x_B
-
-        d = ub.ray[:n].copy()                # recession direction in the (standard-form) x-space
-        dir_obj_slope = float(c @ d)         # c^T d  (negative for MIN)
-
-        info2 = {"f": [], "basis": [B.copy()], "enter_leave": []}
-        return x_feas, {
-            "phase1_feasible": True,
-            "phase1_value": phase1_value,
-            "phase1_basis": basis1,
-            "phase2_basis": basis2_orig,
-            "status": "unbounded",
-            "reason": "ratio test failed (no leaving variable).",
-            "ray": d,                               # << witness direction
-            "ray_objective_slope": dir_obj_slope,   # << c^T d (should be < 0)
-            "entering": ub.entering,
-            "hist_phase2": info2
-        }
+    return simplex_standard(A2, b2, c, basis=basis2_orig, tol=tol, maxit=maxit)
+    

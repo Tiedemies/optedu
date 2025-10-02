@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Callable, Dict, Any
 import numpy as np
 
-from ..utils.types import History, ensure_array  # History: dict-like recorder with .append(...)
+from ..utils.types import History, ensure_array, AlgoResult  # History: dict-like recorder with .append(...)
 from .linesearch import backtracking_armijo
 
 Array = np.ndarray
@@ -51,7 +51,7 @@ def newton(
     - If safeguard=True, applies eigenvalue flooring to ensure a descent
       direction (this is *modified Newton*).
 
-    Returns (unified, no duplication):
+    Returns AlgoResult with fields:
         {
           "status": "converged" | "maxit" | "failed",
           "x": ndarray,             # final iterate
@@ -123,14 +123,13 @@ def newton(
         nit += 1
 
     # ------------------------------------ [S4] Outputs ----------------------------------------
-    return {
-        "status": status,
-        "x": x,
-        "f": float(history["f"][-1]),
-        "history": history,
-        "counts": {"nit": nit, "nfev": nfev, "njev": njev, "nhev": nhev},
-    }
-
+    result = AlgoResult()
+    result.status = status
+    result.x = x
+    result.f = fx
+    result.history = history
+    result.counts = {"nit": nit, "nfev": nfev, "njev": njev, "nhev": nhev}
+    return result
 
 # Compatibility alias for existing imports in tests/notebooks
 newton_method = newton
