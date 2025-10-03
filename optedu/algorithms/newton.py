@@ -69,7 +69,10 @@ def newton(
     g  = grad(x);      njev = 1
     ng = float(np.linalg.norm(g))
 
-    history.append(x=x.copy(), f=fx, grad_norm=ng)
+    history["f"] = [fx]
+    history["x"] = [x.copy()]
+    history["grad_norm"] = [ng]
+    history["step"] = [None]
     status = "maxit"
 
     nit = 0
@@ -112,7 +115,10 @@ def newton(
         g  = grad(x);      njev += 1
         ng = float(np.linalg.norm(g))
 
-        history.append(x=x.copy(), f=fx, grad_norm=ng, step=float(t))
+        history["x"].append(x.copy())
+        history["f"].append(fx)
+        history["grad_norm"].append(ng)
+        history["step"].append(float(t))
 
         # ------------------------------- [S4] Stopping (post-update) ----------------------------
         if ng <= tol:
@@ -123,13 +129,14 @@ def newton(
         nit += 1
 
     # ------------------------------------ [S4] Outputs ----------------------------------------
-    result = AlgoResult()
-    result.status = status
-    result.x = x
-    result.f = fx
-    result.history = history
-    result.counts = {"nit": nit, "nfev": nfev, "njev": njev, "nhev": nhev}
-    return result
+
+    return AlgoResult(
+        status=status,
+        x=x,
+        f=fx,
+        history=history,
+        counts={"nit": nit, "nfev": nfev, "njev": njev, "nhev": nhev}
+    )
 
 # Compatibility alias for existing imports in tests/notebooks
 newton_method = newton

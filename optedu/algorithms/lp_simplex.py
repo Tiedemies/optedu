@@ -6,8 +6,7 @@
 from __future__ import annotations
 import numpy as np
 from typing import Dict, Any, List, Optional, Tuple
-from utils.types import History, LPExtras, AlgoResult, Status
-from problems.lp import LP
+from ..utils.types import History, LPExtras, AlgoResult, Status
 
 
 ## Find identity
@@ -62,14 +61,12 @@ def simplex_standard(
     if b.shape != (m,) or c.shape != (n,):
         raise ValueError("Dimension mismatch in simplex_standard.")
     
-    result = AlgoResult()
-    result.status = "failed"
-    result.lp = LPExtras()
    
     # [P43:1] Choose feasible base unless it has been provided. 
     if basis is None:
         basis = _find_identity_basis(A, b, tol=1e-10)
         if basis is None:
+            result = AlgoResult(status="failed", extra={"message": "No feasible basis found."})
             return result
     B = np.array(basis, dtype=int)
     N = np.array([j for j in range(n) if j not in set(B)], dtype=int)
@@ -110,10 +107,13 @@ def simplex_standard(
         # [P43:4] Optimality (MIN): All reduced costs >= -tol. We don't compare to 0
         # directly to avoid numerical noise issues.
         if np.all(r_N >= -tol):
-            result.status = "converged"
-            result.x = x
-            result.f = f_val
-            result.history = History(f=hist_f, x=hist_basis, meta={"enter_leave": hist_pivots})
+            result = AlgoResult(
+                status="converged",
+                x=x,
+                f=f_val,
+                lp=LPExtras(basis=B.copy()),
+                history=History(f=hist_f, x=hist_basis, meta={"enter_leave": hist_pivots})
+            )            
             break
 
         # [P43:5] Find an index with r_j < -tol (first such index)
@@ -142,11 +142,11 @@ def simplex_standard(
             # Sanity: A d ≈ 0; objective slope = c^T d = r_j < 0 (for MIN)
             # Raise typed exception with the witness ray
             # print("Unbounded direction found (no leaving variable).")
-            result.status = "unbounded"
-            result.lp = LPExtras(
-                basis=B.copy(), direction=d
+            result = AlgoResult(
+                status="unbounded",
+                lp=LPExtras(basis=B.copy(), direction=d),
+                history=History(f=hist_f, x=hist_basis, meta={"enter_leave": hist_pivots})
             )
-            result.history = History(f=hist_f, x=hist_basis, meta={"enter_leave": hist_pivots})
             break
 
         # [P43:7] Ratio test, to find the index in B to leave the basis. 
@@ -159,10 +159,12 @@ def simplex_standard(
             d = np.zeros(n, dtype=float)
             d[j_enter] = 1.0
             d[B] = d_B
-            result.status = "unbounded"
-            result.lp = LPExtras(
-                basis=B.copy(), direction=d
+            result = AlgoResult(
+                status="unbounded",
+                lp=LPExtras(basis=B.copy(), direction=d),
+                history=History(f=hist_f, x=hist_basis, meta={"enter_leave": hist_pivots})
             )
+            break
         #print(f"Leaving index: {B[i_leave]} with ratio {theta}")
         # Pivot updates (values and basis indices) stored in history (not in the notes)
         x_B = x_B + theta * d_B
@@ -176,11 +178,13 @@ def simplex_standard(
 
         iters += 1
         if iters > maxit:
-            result.status = "maxit"
-            result.x = x
-            result.f = f_val
-            result.lp = LPExtras(basis=B.copy())
-            result.history = History(f=hist_f, x=hist_basis, meta={"enter_leave": hist_pivots})
+            result = AlgoResult(
+                status="maxit",
+                x=x,
+                f=f_val,
+                lp=LPExtras(basis=B.copy()),
+                history=History(f=hist_f, x=hist_basis, meta={"enter_leave": hist_pivots})
+            )
             break
 
     # Finalize result

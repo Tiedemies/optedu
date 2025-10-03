@@ -66,11 +66,9 @@ def bfgs(
     fx = float(f(x)); nfev = 1         # objective at x_0
     g  = grad(x);      njev = 1        # gradient at x_0
     ng = float(np.linalg.norm(g))      # gradient norm
-
-    result = AlgoResult()               # final output dict
+    status = "maxit"                    # default status (may change to "converged" later)
 
     history.append(x=x.copy(), f=fx, grad_norm=ng)  # initial log (no step yet)
-    result.status = "maxit"
     nit = 0 # Iteration counter
     njev = 1 # gradient evaluations
     nfev = 1 # function evaluations
@@ -80,7 +78,7 @@ def bfgs(
     while nit < maxit:
         # ------------------------------- [S4] Stopping (pre-check) -------------------------------
         if ng <= tol:
-            result.status = "converged"
+            status = "converged"
             break
 
         # ------------------------------------ [S4] Direction ------------------------------------
@@ -128,16 +126,18 @@ def bfgs(
 
         # ------------------------------- [S4] Stopping (post-update) ----------------------------
         if ng <= tol:
-            result.status = "converged"
+            status = "converged"
             nit += 1
             break
 
         nit += 1
 
     # ------------------------------------ [S4] Outputs ----------------------------------------
-    result.status = result.status if result.status == "converged" else "maxit"
-    result.x = x
-    result.f = fx
-    result.history = history
-    result.counts = {"nit": nit, "nfev": nfev, "njev": njev}
+    result = AlgoResult(
+        status=status,
+        x=x,
+        f=fx,
+        history=history,
+        counts={"nit": nit, "nfev": nfev, "njev": njev}
+    )   
     return result

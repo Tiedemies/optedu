@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Callable, Dict, Any, Sequence, Tuple, Optional
 import numpy as np
 
-from ..utils.types import History  # dict-like recorder with .append(...)
+from ..utils.types import History, AlgoResult  # dict-like recorder with .append(...)
 
 Array   = np.ndarray
 Bounds  = Sequence[Tuple[float, float]]
@@ -121,13 +121,14 @@ def genetic_minimize(
     nfev = int(pop_size)
 
     # Prepare unified history (single source of truth).
-    history = History()
+
     best_idx = int(np.argmin(fitness))
     best_x = X[best_idx].copy()
     best_f = float(fitness[best_idx])
     # Log initial best-so-far snapshot (generation 0)
-    history.append(x=best_x.copy(), f=best_f)
-
+    x_history = [best_x.copy()]
+    f_history = [best_f]
+  
     nit = 0
     status = "maxit"   # GA typically uses a fixed budget; we report "maxit" at completion.
 
@@ -186,7 +187,8 @@ def genetic_minimize(
             best_x = gen_best_x
 
         # Log one entry per generation: best-so-far (x, f)
-        history.append(x=best_x.copy(), f=best_f)
+        x_history.append(best_x.copy())
+        f_history.append(best_f)
 
         nit += 1
 
@@ -195,10 +197,11 @@ def genetic_minimize(
         # (e.g., no-improvement window, target fitness) can be added later.
 
     # ------------------------------------ Outputs ------------------------------------
-    return {
-        "status": status,     # finished because the generation budget was reached
-        "x": best_x,
-        "f": best_f,
-        "history": history,   # History only: contains 'f' and 'x' series (no grad/step in GA)
-        "counts": {"nit": nit, "nfev": nfev},
-    }
+    
+    return AlgoResult(
+        status=status,
+        x=best_x,
+        f=best_f,
+        history=History(f=f_history, x=x_history),
+        counts={"nit": nit, "nfev": nfev}
+    )

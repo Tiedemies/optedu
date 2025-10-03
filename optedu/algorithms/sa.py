@@ -2,6 +2,7 @@
 from __future__ import annotations
 import numpy as np
 from typing import Callable, Optional, Sequence, Tuple, Dict, Any, List
+from ..utils.types import AlgoResult, History  # unified return type for algorithms
 
 Array = np.ndarray
 Bounds = Optional[Sequence[Tuple[float, float]]]
@@ -58,16 +59,20 @@ def simulated_annealing(
     fx = float(f(x))
     best_x = x.copy()
     best_val = fx
+    nit = iters
+    njev = 1
 
     T = max(T0, 1e-12)
-    history: List[float] = [fx]
+    f_history: List[float] = [fx]
+    x_history = [x.copy()]
+    best_history = [(fx, x.copy())]
 
     for k in range(iters):
         y = _proposal_gaussian(x, step_scale, rng)
         if bounds is not None:
             y = _project_bounds(y, bounds)
 
-        fy = float(f(y))
+        fy = float(f(y)); njev += 1
         delta = fy - fx
         if delta <= 0.0:
             # Accept improvement
@@ -80,25 +85,16 @@ def simulated_annealing(
         if fx < best_val:
             best_val = fx
             best_x = x.copy()
-
-        history.append(best_val)
+        best_history.append((best_val, best_x.copy()))
+        f_history.append(fx)
         T *= alpha  # geometric cooling
 
-    return {
-        "best_x": best_x,
-        "best_value": best_val,
-        "nit": iters,
-        "status": "converged" if iters > 0 else "maxit",
-        "history": history,
-    }
+    return AlgoResult(
+        status="maxit",
+        x=best_x,
+        f=best_val,
+        history=History(f=f_history, x=x_history, meta={"best": best_history}),
+        counts={"nit": nit, "njev": njev}
+    )
 
-### Unified public API wrapper -------------------------------------------
-from ..utils.types import pack_result, _ensure_history_dict
-
-def simulated_annealing_unified(*, f, x0, **kwargs):
-    out = simulated_annealing(f=f, x0=x0, **kwargs)  # existing function
-    hist = _ensure_history_dict(f=out.get("history"))
-    return pack_result(status=out.get("status","converged"),
-                       x=out.get("best_x"), f=out.get("best_value"),
-                       nit=out.get("nit"), history=hist)
 

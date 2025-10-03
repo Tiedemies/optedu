@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import Callable, Dict, Any
 import numpy as np
 
-from ..utils.types import History, ensure_array
+from ..utils.types import History, ensure_array, AlgoResult  # History is the dict-like recorder used across the course
 
 Array = np.ndarray
 Objective = Callable[[Array], float]
@@ -99,13 +99,14 @@ def nelder_mead(
     simplex, fvals = _simplex_order(simplex, fvals)
 
     # Prepare history and log initial best-so-far
-    history = History()
+   
     best_x = simplex[0].copy()
     best_f = float(fvals[0])
     # step: diameter at initial simplex (for students/plots)
     diam = _diameter(simplex)
-    history.append(x=best_x.copy(), f=best_f, step=diam, meta={"op": "init"})
-
+    x_history = [best_x.copy()]
+    f_history = [best_f]
+    op_history = []
     nit = 0
     status = "maxit"
 
@@ -180,7 +181,7 @@ def nelder_mead(
                         simplex[i] = simplex[0] + sigma * (simplex[i] - simplex[0])
                         fvals[i] = float(f(simplex[i])); nfev += 1
                     op = "shrink"
-
+        op_history.append(op)
         # Step 1: Reorder simplex after the update
         simplex, fvals = _simplex_order(simplex, fvals)
 
@@ -188,7 +189,8 @@ def nelder_mead(
         best_x = simplex[0].copy()
         best_f = float(fvals[0])
         diam = _diameter(simplex)
-        history.append(x=best_x.copy(), f=best_f, step=diam, meta={"op": op})
+        x_history.append(best_x.copy())
+        f_history.append(best_f)
 
         # ------------------------------- Stopping rules (post-update) ----------------------------
         if diam <= tol and float(fvals[-1] - fvals[0]) <= tol:
@@ -199,10 +201,11 @@ def nelder_mead(
         nit += 1
 
     # ------------------------------------ [S4] Outputs ----------------------------------------
-    return {
-        "status": status,
-        "x": best_x,
-        "f": best_f,
-        "history": history,            # single source of truth; includes step (diam) and meta (op)
-        "counts": {"nit": nit, "nfev": nfev},
-    }
+    result = AlgoResult(
+        status=status,
+        x=best_x,
+        f=best_f,
+        history=History(f=f_history, x=x_history, meta={"op": op_history}),
+        counts={"nit": nit, "nfev": nfev}
+    )
+    return result

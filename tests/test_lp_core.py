@@ -5,8 +5,8 @@ import pytest
 # Unified return type; LP extras under result["lp"]["..."]
 
 from optedu.problems.lp import LP
-from optedu.algorithms.lp_two_phase import two_phase_simplex
-from optedu.algorithms.lp_simplex import simplex
+from optedu.algorithms.lp_two_phase import solve_two_phase as two_phase_simplex
+from optedu.algorithms.lp_simplex import simplex_standard
 
 def _solve_two_phase(A, b, c):
     prob = LP(A=np.asarray(A, float), b=np.asarray(b, float), c=np.asarray(c, float))
@@ -21,7 +21,7 @@ def test_lp_optimal_basic():
     b = [4, 6]
     c = [-1, -2]   # minimize c^T x
     res = _solve_two_phase(A, b, c)
-    assert res["status"] == "optimal"
+    assert res["status"] == "converged"
     x = res["x"]
     # Known optimum at x = (3, 1) with f = -5
     assert np.allclose(x, [3.0, 1.0], atol=1e-10)

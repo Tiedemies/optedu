@@ -59,7 +59,11 @@ def gradient_descent(
     g  = grad(x)
     nfev = 1; njev = 1   # oracle call counts
     ng = float(np.linalg.norm(g))
-    history.append(x=x.copy(), f=fx, grad_norm=ng)   # no step recorded for the initial state
+    history["f"]= [fx]
+    history["x"] = [x.copy()]
+    history["grad_norm"] = [ng]
+    history["step"] = [None]   # no step taken to get to
+    
 
     status = "maxit"   # default; will switch to "converged" if the tolerance is met
     # message optional; omitted to keep the return minimal per unified contract
@@ -101,7 +105,10 @@ def gradient_descent(
         fx = float(f(x)); nfev += 1
         g  = grad(x); njev += 1
         ng = float(np.linalg.norm(g))
-        history.append(x=x.copy(), f=fx, grad_norm=ng, step=float(t))
+        history["x"].append(x.copy())
+        history["f"].append(fx)
+        history["grad_norm"].append(ng)
+        history["step"].append(float(t))
 
         # ------------------------------- [S4] Stopping (post-update) ----------------------------
         if ng <= tol:
@@ -113,10 +120,12 @@ def gradient_descent(
 
     # ------------------------------------ [S4] Outputs ----------------------------------------
     # We return exactly the unified structure. History is the single source of truth for traces.
-    result = AlgoResult()
-    result.status = status
-    result.x = x
-    result.f = fx
-    result.history = history
-    result.counts = {"nit": nit, "nfev": nfev, "njev": njev}
-    return result
+   
+    return AlgoResult(
+        status=status,
+        x=x,
+        f=fx,
+        history=history,
+        counts={"nit": nit, "nfev": nfev, "njev": njev}
+    )
+

@@ -14,6 +14,7 @@
 from __future__ import annotations
 import numpy as np
 from typing import Callable, Dict, Any, List, Tuple
+from ..utils.types import AlgoResult
 from .lp_simplex import simplex_standard
 
 
@@ -109,21 +110,15 @@ def solve_two_phase(
 
     # print("--- Phase I: Auxiliary Problem ---")
     first_result = simplex_standard(A1, b1, c1, basis=basis1_init, tol=tol, maxit=maxit)
-    x1 = first_result.x
+    x1 = first_result["x"]
     phase1_value = float(np.sum(x1[n:]))        # sum of artificials at optimum
 
     if phase1_value > max(tol, 1e-8):
         # Infeasible original LP
-        return x1[:n], {
-            "phase1_feasible": False,
-            "phase1_value": phase1_value,
-            "phase1_basis": first_result.lp.basis if first_result.lp else None,
-            "status": "infeasible",
-            "hist_phase2": {}
-        }
+        return AlgoResult(status="infeasible", x=None, f=np.inf, history=None, counts={"nit": 0, "nfev": 0})
 
     # ----- Phase I → Phase II: get a feasible basis for Ax=b, x>=0 -----
-    basis1 = first_result.lp.basis if first_result.lp else basis1_init
+    basis1 = first_result["lp"]["basis"] if "lp" in first_result else basis1_init
     basis2 = _pivot_out_zero_artificials(A2, b2, basis1, a_cols, tol)
     # Prefer original columns in the Phase II warm start
     basis2_orig = [j for j in basis2 if j < n]

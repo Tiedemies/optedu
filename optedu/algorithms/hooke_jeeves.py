@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Callable, Dict, Any
 import numpy as np
 
-from ..utils.types import History, ensure_array
+from ..utils.types import History, ensure_array, AlgoResult  # History is the dict-like recorder used across the course
 
 Array = np.ndarray
 Objective = Callable[[Array], float]
@@ -148,10 +148,10 @@ def hooke_jeeves(
 
         nit += 1
 
-    return {
-        "status": status,
-        "x": x_base,
-        "f": float(f_base),
-        "history": history,              # contains best-so-far (x,f), step=max(delta), meta labels op
-        "counts": {"nit": nit, "nfev": nfev},
-    }
+    return AlgoResult(
+        status=status,
+        x=x_base,
+        f=f_base,
+        history=history,
+        counts={"nit": nit, "nfev": nfev}
+    )
