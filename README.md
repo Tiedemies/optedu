@@ -8,8 +8,8 @@ Teaching-first optimization library for MSc/PhD coursework and live demos. It pr
 ## Installation
 
 ```bash
-# clone your repository (example path)
-git clone https://github.com/<you>/optedu.git
+# clone this repository 
+git clone https://github.com/Tiedemies/optedu.git
 cd optedu
 
 # dev install
@@ -35,8 +35,8 @@ python optimize.py configs/rosenbrock_gd.json -v
 python optimize.py configs/lp_mixed_ineq.json
 ```
 
-* The solver prints `status: optimal | infeasible | unbounded`.
-* For **unbounded**, it also prints a **recession direction** `d` with `A d = 0` and `c^T d < 0`.
+* The solver prints `status: converged | maxit | unbounded | infeasible | failed.
+* For **unbounded** in LP it also prints a **recession direction** `d` with `A d = 0` and `c^T d < 0`.
 
 ## Configuration format
 
@@ -48,10 +48,12 @@ All experiments use the same JSON template:
   "problem": { "target": "module.path:ClassOrFactory", "kwargs": { "param": 123 } },
   "algorithm": { "target": "module.path:function", "kwargs": { "tol": 1e-6 } },
   "x0": [ ... ],                     // used by NL problems; ignored by LPs
-  "interactive": true,               // for 2-D NL problems (live contour)
-  "xlims": [-2, 2], "ylims": [-1, 3],
-  "levels": 50, "density": 320,
-  "style": { "axes.grid": true }
+  "visual":{
+    "interactive": true,               // for 2-D NL problems (live contour, when zooming)
+    "xlims": [-2, 2], "ylims": [-1, 3], // Limits of the visual box
+    "levels": 50, "density": 320,  // How many levels and density of the contours
+    "style": { "axes.grid": true } 
+  }
 }
 ```
 
@@ -71,7 +73,7 @@ This project uses one simple pattern for **all** problems:
 * The runner (`optimize.py`) inspects the algorithm’s parameters and supplies what it needs automatically:
 
   * Nonlinear problems: `f`, `grad`, `hess`, `x0` as requested by the algorithm’s signature.
-  * Linear programs: `A`, `b`, `c` (and it will standardize if `senses` are provided).
+  * Linear programs: `A`, `b`, `c` (and it will standardize if `senses` are provided). NOTE: read the code carefully
 
 You do **not** hard-code call signatures in configs.
 
@@ -217,28 +219,17 @@ For the **min** standard form ( \min c^T x \ \text{s.t.}\ Ax=b,\ x\ge0 ): solve 
 optedu/
 ├─ optedu/
 │  ├─ algorithms/
-│  │  ├─ solve_lp.py
-│  │  └─ lp/
-│  │     ├─ simplex_standard.py
-│  │     └─ two_phase.py
 │  ├─ problems/
-│  │  ├─ lp.py
-│  │  └─ lp_standardize.py
 │  └─ visuals/
-│     ├─ core.py
-│     └─ interactive.py
 ├─ configs/
-│  ├─ rosenbrock_gd.json
-│  └─ lp_mixed_ineq.json
 ├─ tests/
-│  └─ test_lp_unbounded.py
 ├─ optimize.py
 ├─ pyproject.toml
 ├─ requirements.txt
 └─ README.md
 ```
 
-## Testing (not currently functional) 
+## Testing
 
 ```bash
 pytest -q
