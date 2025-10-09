@@ -25,8 +25,8 @@ def gradient_descent(
     # ------------------------ [S4] Inputs / Hyperparameters ------------------------
     maxit: int = 2000,              # hard iteration cap (safety net)
     tol: float = 1e-8,              # gradient-norm tolerance for convergence
-    step_policy: StepPolicy = "exact",  # default: attempt exact line search first
-    # Armijo parameters (used if step_policy='armijo' or exact step is unusable)
+    step: StepPolicy = "exact",  # default: attempt exact line search first
+    # Armijo parameters (used if step ='armijo' or exact step is unusable)
     c1: float = 1e-4,
     rho: float = 0.5,
     t0: float = 1.0,
@@ -84,19 +84,20 @@ def gradient_descent(
         # Default policy tries an exact line search; if unusable, we fall back to Armijo.
         # exact_line_search is assumed to have signature exact_line_search(f, x, d).
         t = None
-        if step_policy == "exact":
+        nstep = 0
+        if step == "exact":
             try:
-                t_candidate = float(exact_line_search(f, x, d))
+                t_candidate,nstep = float(exact_line_search(f, x, d))
                 if np.isfinite(t_candidate) and t_candidate > 0.0:
                     t = t_candidate
             except Exception:
                 t = None
 
-        if t is None or step_policy == "armijo":
+        if t is None or step == "armijo":
             # Armijo backtracking uses (f, grad, x, d, c1, rho, t0).
             # We rely on the linesearch helper; we do not try to replicate its internal logic here.
-            t = backtracking_armijo(f, grad, x, d, c1=c1, rho=rho, t0=t0)
-
+            t, nstep = backtracking_armijo(f, grad, x, d, c1=c1, rho=rho, t0=t0)
+        nfev += nstep
         # ------------------------------------ [S4] Update --------------------------------------
         # Apply the step: x_{k+1} = x_k + t_k d_k
         x = x + t * d

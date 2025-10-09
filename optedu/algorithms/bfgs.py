@@ -32,6 +32,7 @@ def bfgs(
     c1: float = 1e-4,             # Armijo parameter
     rho: float = 0.5,             # backtracking contraction
     t0: float = 1.0,              # initial trial step
+    step: Any = None             # Not used in BFGS. Just for unified signature.
 ) -> Dict[str, Any]:
     """
     BFGS with inverse-Hessian approximation H_k:

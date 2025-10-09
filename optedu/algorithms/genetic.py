@@ -65,6 +65,7 @@ def genetic_minimize(
     p_mut: float = 0.1,
     elitism: bool = True,
     rng: Optional[np.random.Generator] = None,
+    step: Any = None  # Not used in GA. Just for unified signature.
 ) -> Dict[str, Any]:
     """
     Genetic Algorithm (GA) following Chapter 6 §6.2.1 (7-step scheme).

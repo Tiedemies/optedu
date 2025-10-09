@@ -71,7 +71,9 @@ def nelder_mead(
     gamma: float = 2.0,       # expansion coefficient
     rho: float = 0.5,         # contraction coefficient
     sigma: float = 0.5,       # shrink coefficient
+    step: Any = None          # Not used in NM. Just for unified signature.    
 ) -> Dict[str, Any]:
+   
     """
     Nelder–Mead (reflection / expansion / contraction / shrink).
     Follows the standard 6.1.1 decision tree.

@@ -56,6 +56,7 @@ def hooke_jeeves(
     tol: float = 1e-6,          # terminate when all step lengths are <= tol
     delta0: float = 0.5,        # initial step length for all coordinates
     theta: float = 0.5,         # reduction factor for step length (0 < theta < 1)
+    step: Any = None          # Not used in HJ. Just for unified signature.
 ) -> Dict[str, Any]:
     """
     Hooke–Jeeves pattern search (derivative-free).

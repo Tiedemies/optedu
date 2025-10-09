@@ -240,4 +240,4 @@ def to_standard_form(
         "objective_offset": float(shift_const),
         "col_meta": col_meta
     }
-    return c_std, A_std, b_std, info
+    return  A_std, b_std, c_std, info

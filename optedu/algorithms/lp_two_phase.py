@@ -16,6 +16,7 @@ import numpy as np
 from typing import Callable, Dict, Any, List, Tuple
 from ..utils.types import AlgoResult
 from .lp_simplex import simplex_standard
+from ..problems.lp_standardize import to_standard_form
 
 
 # (§3.3.2) Row sign normalization so that we can take a=b as feasible for artificials
@@ -86,6 +87,51 @@ def _pivot_out_zero_artificials(A: np.ndarray, b: np.ndarray, basis: List[int], 
                     break
     return list(map(int, list(B)))
 
+def solve_two_phase_generic(
+    A: np.ndarray,
+    b: np.ndarray,
+    c: np.ndarray,
+    *,
+    senses: List[str],
+    objective: str = "min",
+    lb: Any = None,
+    ub: Any = None,
+    tol: float = 1e-9,
+    maxit: int = 10000,
+    step: Any = None  # Not used in LP. Just for unified signature.
+) -> tuple[np.ndarray, Dict[str, Any]]:
+    """
+    Solve a general LP via the two-phase method (per §3.3.2),
+    using the same page-43 simplex in both phases. Returns either an optimal
+    solution or (if unbounded) a feasible point with a recession direction.
+
+    Parameters
+    ----------
+    A, b, c : original LP data, with n variables and m constraints
+    senses  : list of length m with entries in {"le","eq","ge"}
+    objective : "min" (default) or "max"
+    lb, ub : arrays of length n with lower/upper bounds. Use:
+             - lb[i] = -np.inf to indicate no lower bound
+             - ub[i] = +np.inf to indicate no upper bound
+    tol : tolerance for feasibility and optimality
+    maxit : maximum number of simplex iterations
+
+    Returns
+    -------
+    x_opt, info
+      x_opt : ndarray or None if infeasible
+      info  : dict with keys:
+        - status : "optimal", "infeasible", or "unbounded"
+        - f      : optimal objective value (or inf if infeasible)
+        - history: simplex history object (or None if infeasible)
+        - counts : {"nit": int, "nfev": int}
+    """
+    A_std, b_std, c_std, info_std = to_standard_form(A=A, b=b, c=c, senses=senses,
+                                                    objective=objective,
+                                                    lb=lb, ub=ub
+                                                    )
+    return solve_two_phase(A_std, b_std, c_std, tol=tol, maxit=maxit)
+
 
 def solve_two_phase(
     A: np.ndarray,
@@ -93,7 +139,8 @@ def solve_two_phase(
     c: np.ndarray,
     *,
     tol: float = 1e-9,
-    maxit: int = 10000
+    maxit: int = 10000,
+    step: Any = None  # Not used in LP. Just for unified signature.
 ) -> tuple[np.ndarray, Dict[str, Any]]:
     """
     Solve min c^T x s.t. A x = b, x >= 0 via the two-phase method (per §3.3.2),

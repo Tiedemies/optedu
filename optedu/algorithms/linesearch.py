@@ -7,13 +7,15 @@ def backtracking_armijo(f: Callable, grad: Callable, x: np.ndarray, d: np.ndarra
     x = ensure_array(x); d = ensure_array(d)
     t = float(t0)
     fx = float(f(x))
+    neval = 1
     gTd = float(grad(x).dot(d))
     if gTd >= 0:
         raise AssertionError("Direction must be a descent direction for Armijo backtracking.")
     while True:
+        neval+=1
         xn = x + t*d
         if f(xn) <= fx + c1*t*gTd:
-            return t
+            return t, neval
         t *= rho
 
 def exact_quadratic_step(Q: np.ndarray, gradx: np.ndarray, d: np.ndarray) -> float:
@@ -23,7 +25,7 @@ def exact_quadratic_step(Q: np.ndarray, gradx: np.ndarray, d: np.ndarray) -> flo
 
 # --- Robust exact numeric line search (shrink-then-expand + golden section) ---
 
-def _golden_section(phi, a, b, c, tol=1e-8, maxit=200):
+def _golden_section(phi, a, b, c, tol=1e-16, maxit=200):
     """
     Golden-section search on [a,c]. 'b' is a point inside (not necessarily the minimizer).
     Returns t*, phi(t*). Assumes phi is unimodal on [a,c].
@@ -66,7 +68,7 @@ def exact_line_search(
     shrink=0.5,           # shrink factor for finding initial decrease
     grow=2.0,             # expansion factor to bracket the minimum
     min_step=1e-12,       # stop shrinking under this
-    tol=1e-8,
+    tol=1e-9,
     maxit=200
 ):
     """
@@ -75,7 +77,7 @@ def exact_line_search(
     Returns t* (float).
     """
     x = ensure_array(x); d = ensure_array(d)
-
+    nfeval = 0
     def phi(t):
         # enforce t >= 0
         t = max(0.0, float(t))
@@ -89,9 +91,8 @@ def exact_line_search(
     n_shrink = 0
     while fb >= fa and t > min_step and n_shrink < maxit:
         t *= shrink
-        fb = phi(t)
+        fb = phi(t);nfeval+=1
         n_shrink += 1
-
     if fb >= fa:
         # Could not find a decrease: as a safety, return zero step (caller can fall back to Armijo)
         return 0.0
@@ -110,10 +111,10 @@ def exact_line_search(
         b, fb = c, fc
         step *= grow
         c = b + step
-        fc = phi(c)
+        fc = phi(c);nfeval+=1
         n_expand += 1
 
     # We have a bracket [a, c] with a < b < c and phi(b) <= phi(a), phi(b) <= phi(c)
     t_star, _ = _golden_section(phi, a, b, c, tol=tol, maxit=maxit)
-    return float(t_star)
+    return float(t_star), nfeval
 
