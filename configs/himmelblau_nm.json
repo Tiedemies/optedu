@@ -1,0 +1,20 @@
+{
+  "title": "Nelder–Mead on Himmelblau",
+  "problem": {
+    "target": "optedu.problems.himmelblau:Himmelblau",
+    "kwargs": {}
+  },
+  "algorithm": {
+    "target": "optedu.algorithms.nelder_mead:nelder_mead",
+    "kwargs": { "step": 0.5, "maxit": 400 }
+  },
+  "x0": [4.5, 4.5],
+  "visual": {
+    "xlims": [-5, 5],
+   "ylims": [-5, 5],
+   "levels": 60,
+   "interactive": true,
+   "density": 320,
+   "style": { "axes.grid": true }
+  }
+}

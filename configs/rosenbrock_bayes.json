@@ -1,0 +1,24 @@
+{
+  "problem": {"target": "optedu.problems.rosenbrock:Rosenbrock", "kwargs": {"n": 2}},
+  "algorithm": {
+    "target": "optedu.algorithms.bayesopt:bayes_optimize",
+    "kwargs": {
+      "bounds": [[-2.0, 2.0], [-1.0, 3.0]],
+      "iters": 60,
+      "n_init": 8,
+      "cand_points": 2048,
+      "acq": "ei",
+      "xi": 0.01,
+      "lengthscale": 0.5,
+      "variance": 1.0,
+      "noise": 1e-8
+    }
+  },
+  "visual": {
+    "interactive": true,
+    "xlims": [-2, 2],
+    "ylims": [-1, 3],
+    "levels": 40,
+    "title": "BO on Rosenbrock"
+  }
+}

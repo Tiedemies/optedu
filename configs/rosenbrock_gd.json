@@ -1,0 +1,13 @@
+{
+  "title": "GD on Rosenbrock (interactive)",
+  "problem": { "target": "optedu.problems.rosenbrock:Rosenbrock", "kwargs": { "n": 2 } },
+  "algorithm": { "target": "optedu.algorithms.gradient_descent:gradient_descent",
+                 "kwargs": { "step": "exact_numeric", "maxit": 500 } },
+  "x0": [-1.2, 1.0],
+  "xlims": [-2, 2],
+  "ylims": [-1, 3],
+  "levels": 50,
+  "interactive": true,
+  "density": 320,
+  "style": { "axes.grid": true }
+}

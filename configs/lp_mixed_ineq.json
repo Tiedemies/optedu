@@ -1,0 +1,27 @@
+{
+  "title": "Two-Phase on mixed-inequality LP",
+  "problem": {
+    "target": "optedu.problems.lp:LP",
+    "kwargs": {
+      "A": [[1,  2, -4,  0],
+            [3, -1,  0, -2]],
+      "b": [2, 1],
+      "c": [-2, 1, -3, -1],
+      "sense": "min",
+      "senses": ["le", "ge"]
+    }
+  },
+  "algorithm": {
+    "target": "optedu.algorithms.lp_two_phase:solve_two_phase_generic",
+    "kwargs": { "tol": 1e-9, "maxit": 10000 }
+  },
+  "x0": [0, 0, 0, 0],
+  "visual": {
+    "xlims": [-1, 3],
+    "ylims": [-1, 3],
+    "levels": 40,
+    "interactive": true,
+    "density": 320,
+    "style": { "axes.grid": true }
+  }
+}
