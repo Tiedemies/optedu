@@ -65,3 +65,6 @@ outputs/
 *.bak
 *.tmp
 
+# pixi environments
+.pixi/*
+!.pixi/config.toml

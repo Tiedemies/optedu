@@ -21,3 +21,19 @@ packages = ["optedu"]
 
 # If you later add non-Python data files inside optedu/, configure include-package-data = true
 # and MANIFEST.in or tool.setuptools.package-data accordingly.
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-arm64", "win-64"]
+
+[tool.pixi.pypi-dependencies]
+optedu = { path = ".", editable = true }
+
+[tool.pixi.tasks]
+rosenbrock_gd = "python3 optimize.py configs/rosenbrock_gd.json -v"
+lp_mixed_ineq = "python3 optimize.py configs/lp_mixed_ineq.json"
+test = "pytest -q"
+opt = "python3 optimize.py"
+
+[tool.pixi.dependencies]
+pytest = ">=9.0.2,<10"
