@@ -1,4 +1,3 @@
-````markdown
 # optedu
 
 Teaching-first optimization library for MSc/PhD coursework and live demos. It provides **unified visuals**, a **JSON-runner** (`optimize.py`), and implementations that **mirror the course material** (e.g., page-43 simplex, §3.3.2 two-phase).
@@ -247,5 +246,3 @@ pytest -q
 ## License
 
 MIT (see `LICENSE`).
-
-````
