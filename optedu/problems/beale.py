@@ -1,6 +1,10 @@
 import numpy as np
 
 class Beale:
+    # Known minimizer
+    x_star = np.array([3.0, 0.5])
+    f_star = 0.0
+
     def f(self, x):
         x1, x2 = float(x[0]), float(x[1])
         return (1.5 - x1 + x1*x2)**2 + (2.25 - x1 + x1*x2**2)**2 + (2.625 - x1 + x1*x2**3)**2
@@ -20,4 +24,5 @@ class Beale:
         H = np.zeros((2,2))
         H[:,0] = (self.grad(x+eps*e1)-g)/eps
         H[:,1] = (self.grad(x+eps*e2)-g)/eps
-        return H
+        # Forward differences give a slightly non-symmetric H; a true Hessian is symmetric.
+        return 0.5 * (H + H.T)

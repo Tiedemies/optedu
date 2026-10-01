@@ -52,7 +52,6 @@ results/
 outputs/
 *.png
 *.pdf
-*.json
 
 # --- Logs ---
 *.log

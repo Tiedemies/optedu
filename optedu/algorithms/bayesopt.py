@@ -1,10 +1,9 @@
 from __future__ import annotations
 import math
-from typing import Callable, Dict, Any, Optional, Tuple, List
+from typing import Callable, Optional, Tuple, List
 import numpy as np
 
-# ---- Typed result compatibility (no hard import on your types) ----
-from ..utils.types import History, AlgoResult  # dict-like recorder with .append(...)
+from ..utils.types import History, AlgoResult  # History: a plain dict of lists
 
 # ===========================
 #   Gaussian Process (RBF)
@@ -180,7 +179,6 @@ def bayes_optimize(
     """
     rng = rng or np.random.default_rng()
     B = _ensure_bounds(bounds)
-    d = B.shape[0]
 
     # History containers (compatible with your visuals)
     hist: History = {
@@ -264,7 +262,7 @@ def bayes_optimize(
         x = x_star,
         f = f_star,
         history = hist,
-        counts = {"evals": int(evals), "iters": int(iters)},
+        counts = {"nit": int(iters), "nfev": int(evals)},
         message = f"Bayesian optimization finished with {evals} evaluations.",
         extra = {
             "final_lengthscale": gp.lengthscale if isinstance(gp.lengthscale, float) else np.asarray(gp.lengthscale).tolist(),

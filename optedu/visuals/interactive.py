@@ -23,21 +23,16 @@ class _Debouncer:
             pass
         self._timer.start()
 
-def _auto_grid(ax: Axes, density: int = 300) -> np.ndarray:
+def _auto_grid(ax: Axes, density: int = 300) -> tuple[int, int]:
     """
-    Choose grid size based on on-screen pixel span so we don't oversample.
-    'density' ~ target samples along the shorter axis (typ. 200-600).
+    Grid size for the contour: 'density' samples along the shorter side of the axes
+    and proportionally more along the longer side (typ. density 200-600).
     """
-    # axis bbox in pixels
-    bb = ax.get_window_extent().transformed(ax.figure.dpi_scale_trans.inverted())
-    px_w = max(1, int(bb.width * ax.figure.dpi))
-    px_h = max(1, int(bb.height * ax.figure.dpi))
-    short = min(px_w, px_h)
-    scale = max(50, min(4 * density, int(short / (short / density))))  # clamp
-    # keep aspect ratio roughly square
-    nx = int(scale * (px_w / short))
-    ny = int(scale * (px_h / short))
-    return np.array([max(50, nx), max(50, ny)], dtype=int)
+    bb = ax.get_window_extent()                 # axes size on screen, in pixels
+    short = max(1.0, min(bb.width, bb.height))
+    nx = int(density * bb.width / short)
+    ny = int(density * bb.height / short)
+    return max(50, nx), max(50, ny)
 
 def interactive_contour(
     f,
@@ -70,10 +65,9 @@ def interactive_contour(
     cs = [None]  # store artists in a list for reassignment
 
     def _compute_and_draw():
-        # clear previous contour artists
+        # clear the previous contour (the path stays; it is drawn once below)
         if cs[0] is not None:
-            for c in cs[0].collections:
-                c.remove()
+            cs[0].remove()
             cs[0] = None
 
         (xl, xr) = ax.get_xbound()
@@ -90,13 +84,13 @@ def interactive_contour(
             for j in range(nx):
                 Z[i, j] = f(np.array([X[i, j], Y[i, j]]))
 
-        cs[0] = ax.contour(X, Y, Z, levels=levels)
-        # Re-plot path (lines auto-scale with limits)
-        plot_path(hist, ax=ax, annotate_every=annotate_every)
+        cs[0] = ax.contour(X, Y, Z, levels=levels, zorder=0)   # zorder=0: underneath the path
         fig.canvas.draw_idle()
 
-    # initial render
+    # initial render: contour, then the optimization path (drawn only once)
     _compute_and_draw()
+    plot_path(hist, ax=ax, annotate_every=annotate_every)
+    ax.set_xlim(*xlims); ax.set_ylim(*ylims)   # plotting the path must not change the view
 
     # debounce updates on axis limit change
     debouncer = _Debouncer(fig, interval_ms=120, callback=_compute_and_draw)

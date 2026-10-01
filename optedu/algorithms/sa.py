@@ -52,7 +52,9 @@ def simulated_annealing(
 
     Returns
     -------
-    dict with keys: best_x, best_value, nit, status, history
+    AlgoResult with keys: status ("maxit"), x (best point found), f (its value),
+    history (x, f = current point and value per iteration; meta["best"] = best-so-far),
+    counts (nit, nfev)
     """
     rng = _ensure_rng(rng)
     x = np.asarray(x0, dtype=float).copy()
@@ -60,7 +62,7 @@ def simulated_annealing(
     best_x = x.copy()
     best_val = fx
     nit = iters
-    njev = 1
+    nfev = 1
 
     T = max(T0, 1e-12)
     f_history: List[float] = [fx]
@@ -72,7 +74,7 @@ def simulated_annealing(
         if bounds is not None:
             y = _project_bounds(y, bounds)
 
-        fy = float(f(y)); njev += 1
+        fy = float(f(y)); nfev += 1
         delta = fy - fx
         if delta <= 0.0:
             # Accept improvement
@@ -86,6 +88,7 @@ def simulated_annealing(
             best_val = fx
             best_x = x.copy()
         best_history.append((best_val, best_x.copy()))
+        x_history.append(x.copy())
         f_history.append(fx)
         T *= alpha  # geometric cooling
 
@@ -94,7 +97,7 @@ def simulated_annealing(
         x=best_x,
         f=best_val,
         history=History(f=f_history, x=x_history, meta={"best": best_history}),
-        counts={"nit": nit, "njev": njev}
+        counts={"nit": nit, "nfev": nfev}
     )
 
 

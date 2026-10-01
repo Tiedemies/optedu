@@ -14,25 +14,26 @@ from __future__ import annotations
 from typing import Callable, Dict, Any
 import numpy as np
 
-from ..utils.types import History, ensure_array, AlgoResult  # History is the dict-like recorder used across the course
+from ..utils.types import History, ensure_array, AlgoResult  # History: a plain dict of lists used across the course
 
 Array = np.ndarray
 Objective = Callable[[Array], float]
 
 
-def _init_simplex(x0: Array) -> Array:
+def _init_simplex(x0: Array, initial_step: float | None = None) -> Array:
     """
-    Construct an initial (n+1)-vertex simplex around x0 using a simple,
-    scale-aware rule. Unconstrained, so no clipping.
+    Construct an initial (n+1)-vertex simplex around x0: vertex i+1 is x0 moved along coordinate i.
+    If initial_step is given, every coordinate moves by that amount; otherwise a simple
+    scale-aware rule is used (5% of |x0_i|, or 0.05 when x0_i = 0). Unconstrained, so no clipping.
     """
     x0 = ensure_array(x0)
     n = x0.size
     simplex = np.tile(x0, (n + 1, 1))
-    # Classic practical rule: perturb each coordinate i to form vertex i+1
     for i in range(n):
-        step = 0.05 * (1.0 if x0[i] == 0.0 else abs(x0[i]))
-        if step == 0.0:
-            step = 0.00025  # tiny fallback
+        if initial_step is not None:
+            step = float(initial_step)
+        else:
+            step = 0.05 * (1.0 if x0[i] == 0.0 else abs(x0[i]))
         simplex[i + 1, i] += step
     return simplex
 
@@ -71,7 +72,7 @@ def nelder_mead(
     gamma: float = 2.0,       # expansion coefficient
     rho: float = 0.5,         # contraction coefficient
     sigma: float = 0.5,       # shrink coefficient
-    step: Any = None          # Not used in NM. Just for unified signature.    
+    initial_step: float | None = None,  # edge length of the initial simplex (None: 5% of |x0_i|)
 ) -> Dict[str, Any]:
    
     """
@@ -83,14 +84,14 @@ def nelder_mead(
           "status": "converged" | "maxit",
           "x": ndarray,             # best-so-far point at termination
           "f": float,               # best-so-far objective value
-          "history": History,       # per-iter best x,f; 'step'=simplex diameter; 'meta' notes op
+          "history": History,       # per-iter best x,f; 'step'=simplex diameter; meta['op'] = operation per iteration
           "counts": {"nit": int, "nfev": int}
         }
     """
 
     # --------------------------------  Initialization --------------------------------
     x0 = ensure_array(x0)
-    simplex = _init_simplex(x0)
+    simplex = _init_simplex(x0, initial_step)
     m, n = simplex.shape
 
     # Evaluate all vertices
@@ -108,6 +109,7 @@ def nelder_mead(
     diam = _diameter(simplex)
     x_history = [best_x.copy()]
     f_history = [best_f]
+    step_history = [diam]
     op_history = []
     nit = 0
     status = "maxit"
@@ -121,8 +123,8 @@ def nelder_mead(
             status = "converged"
             break
 
-        # Current best, second worst, worst
-        x_best, f_best = simplex[0], fvals[0]
+        # Current best and worst
+        f_best = fvals[0]
         x_worst, f_worst = simplex[-1], fvals[-1]
 
         # Algorithm Step 2: NM uses simplex geometry: compute centroid of best n vertices
@@ -193,6 +195,7 @@ def nelder_mead(
         diam = _diameter(simplex)
         x_history.append(best_x.copy())
         f_history.append(best_f)
+        step_history.append(diam)
 
         # ------------------------------- Stopping rules (post-update) ----------------------------
         if diam <= tol and float(fvals[-1] - fvals[0]) <= tol:
@@ -207,7 +210,7 @@ def nelder_mead(
         status=status,
         x=best_x,
         f=best_f,
-        history=History(f=f_history, x=x_history, meta={"op": op_history}),
+        history=History(f=f_history, x=x_history, step=step_history, meta={"op": op_history}),
         counts={"nit": nit, "nfev": nfev}
     )
     return result

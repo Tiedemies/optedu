@@ -17,8 +17,8 @@
 
 from __future__ import annotations
 import numpy as np
-from typing import Dict, Any, List, Optional, Tuple
-from ..utils.types import History, LPExtras, AlgoResult, Status
+from typing import List, Optional, Tuple
+from ..utils.types import History, LPExtras, AlgoResult
 
 
 
@@ -46,39 +46,23 @@ def _find_dual_feasible_basis(
 ) -> Optional[np.ndarray]:
     """
     Heuristic search for a dual-feasible basis:
-      1) Try identity/slack basis (if present).
+      1) Start from the first m linearly independent columns.
       2) Greedy single-column swaps that strictly reduce the number/size of negative reduced costs.
     Returns np.ndarray of length m with column indices of a dual-feasible basis, or None.
     """
     m, n = A.shape
 
-    # Initialize with first m linearly independent columns (fallback).
-    # Build via a thin QR to pick a nonsingular set if needed.
-    # (Robustness: in degenerate cases this may fail.)
-    try:
-        import numpy.linalg as nla
-        # Greedy linearly independent set using QR with pivoting
-        Q, R, piv = nla.qr(A, mode='reduced', pivoting=True)  # type: ignore
-        B_try = np.array(piv[:m], dtype=int)
-        # Ensure nonsingular A_B
-        A_B = A[:, B_try]
-        if abs(np.linalg.det(A_B)) < 1e-14:
-            # Fall back to a simple scan
-            raise Exception("QR picked nearly singular basis")
-    except Exception:
-        # Very basic fallback: scan columns to pick m with growing rank
-        B_list = []
-        used = set()
-        for j in range(n):
-            if len(B_list) == m:
-                break
-            A_cols = A[:, B_list + [j]]
-            if np.linalg.matrix_rank(A_cols) == len(B_list) + 1:
-                B_list.append(j)
-                used.add(j)
-        if len(B_list) < m:
-            return None
-        B_try = np.array(B_list, dtype=int)
+    # Start from the first m linearly independent columns (scan left to right, keep a column
+    # if it increases the rank).
+    B_list = []
+    for j in range(n):
+        if len(B_list) == m:
+            break
+        if np.linalg.matrix_rank(A[:, B_list + [j]]) == len(B_list) + 1:
+            B_list.append(j)
+    if len(B_list) < m:
+        return None
+    B_try = np.array(B_list, dtype=int)
 
     def neg_reduced_costs_count(A, c, B_idx):
         n_all = A.shape[1]
@@ -146,7 +130,6 @@ def dual_simplex_standard(
     tol: float = 1e-9,
     maxit: int = 10000
 ):
-    print("Using dual_simplex_standard")
     """
     Page-71 dual simplex for:  min c^T x  s.t. A x = b, x >= 0
 
@@ -169,31 +152,30 @@ def dual_simplex_standard(
     # [P71:1] Choose a dual-feasible basis (if not provided).
     if basis is None:
         B = _find_dual_feasible_basis(A, c, tol=max(tol, 1e-12))
-        print("No basis. Found dual-feasible basis:", B)
         if B is None:
-            return AlgoResult(status="failed", extra={"message": "No dual-feasible basis found."})
+            return AlgoResult(status="failed", history=History(), message="No dual-feasible basis found.")
         B = np.array(B, dtype=int)
     else:
-        print("Using provided basis:", basis)
         B = np.array(basis, dtype=int)
         if not _is_dual_feasible(A, c, B, tol):
-            # Try to repair if the provided basis is not dual-feasible.
-            B_repaired = _find_dual_feasible_basis(A, c, tol=max(tol, 1e-12))
-            if B_repaired is None:
-                return AlgoResult(status="failed", extra={"message": "Provided basis is not dual-feasible and repair failed."})
-            B = B_repaired
+            # The dual simplex must START from a dual-feasible basis; tell the user instead of guessing.
+            return AlgoResult(status="failed", history=History(),
+                              message=f"Provided basis {list(basis)} is not dual-feasible "
+                                      "(some reduced cost is negative). Pass another basis or basis=None.")
 
     N = np.array([j for j in range(n) if j not in set(B)], dtype=int)
 
     hist_f: List[float] = []
     hist_basis: List[np.ndarray] = []
     hist_pivots: List[Tuple[int, int]] = []
+    # One history for every outcome. LP iterates are vertices, so the per-iteration trace is the
+    # objective value f; the visited bases and the (entering, leaving) pivots go in meta.
+    history = History(f=hist_f, meta={"basis": hist_basis, "enter_leave": hist_pivots})
 
     iters = 0
     while True:
         # Solve for the current basic values and multipliers.
         A_B = A[:, B]  # (m, m)
-        print(B)
         try:
             x_B = np.linalg.solve(A_B, b)
         except np.linalg.LinAlgError as e:
@@ -210,30 +192,20 @@ def dual_simplex_standard(
         A_N = A[:, N]
         pi_B = np.linalg.solve(A_B.T, c[B])          # [P71:2] dual basic solution
         c_hat_N = c[N] - A_N.T @ pi_B                # reduced costs (dual feasibility check already held at start)
-        print(f"Iteration {iters}: f = {f_val}, x_B = {x_B}, c_hat_N = {c_hat_N}")
         # [P71:2] Optimality test: if x_B >= -tol (primal feasible) and we maintained dual feasibility ⇒ optimal.
         if np.all(x_B >= -tol):
             result = AlgoResult(
                 status="converged",
                 x=x,
                 f=f_val,
-                lp=LPExtras(basis=B.copy(), y=pi_B),
-                history=History(f=hist_f, x=hist_basis, meta={"enter_leave": hist_pivots})
+                lp=LPExtras(basis=B.copy(), dual=pi_B),
+                history=history,
+                counts={"nit": iters}
             )
             break
 
         # [P71:3] Choose r with x_B[r] < 0 (use most negative).
         r = int(np.argmin(x_B))  # most negative component
-        if x_B[r] >= -tol:
-            # Numerical guard: if nothing is negative by tolerance, treat as feasible.
-            result = AlgoResult(
-                status="converged",
-                x=x,
-                f=f_val,
-                lp=LPExtras(basis=B.copy(), y=pi_B),
-                history=History(f=hist_f, x=hist_basis, meta={"enter_leave": hist_pivots})
-            )
-            break
 
         # [P71:4] Compute a_hat_r = e_r^T B^{-1} N  (r-th row of B^{-1} N).
         try:
@@ -247,29 +219,19 @@ def dual_simplex_standard(
 
         # [P71:5] If a_hat_r >= 0 ⇒ infeasible.
         if np.all(a_hat_r >= -tol):
-            print(a_hat_r)
-            print("Primal infeasible: no eligible entering variable.")
             result = AlgoResult(
                 status="infeasible",
                 lp=LPExtras(basis=B.copy()),
-                history=History(f=hist_f, x=hist_basis, meta={"enter_leave": hist_pivots})
+                history=history,
+                counts={"nit": iters}
             )
             break
 
         # [P71:6] Choose s minimizing (-c_hat_N[j]/a_hat_r[j]) over a_hat_r[j] < 0.
         mask = a_hat_r < -tol
         ratios = np.full(a_hat_r.shape, np.inf, dtype=float)
-        ratios[mask] = (-c_hat_N[mask]) / a_hat_r[mask]  # both numerator, denominator should make sense
-        j_rel = int(np.argmin(ratios))
-        if not np.isfinite(ratios[j_rel]):
-            print("No eligible entering variable found; primal infeasible.")
-            # No eligible entering variable -> infeasible (per step 5 outcome).
-            result = AlgoResult(
-                status="infeasible",
-                lp=LPExtras(basis=B.copy()),
-                history=History(f=hist_f, x=hist_basis, meta={"enter_leave": hist_pivots})
-            )
-            break
+        ratios[mask] = (-c_hat_N[mask]) / a_hat_r[mask]  # c_hat_N >= 0 and a_hat_r < 0, so ratios >= 0
+        j_rel = int(np.argmin(ratios))   # finite: step 5 guarantees at least one a_hat_r[j] < 0
         s = int(N[j_rel])  # entering column index (nonbasic)
 
         # [P71:7] Pivot: replace r-th column of B with N[:, s].
@@ -286,8 +248,9 @@ def dual_simplex_standard(
                 status="maxit",
                 x=x,
                 f=f_val,
-                lp=LPExtras(basis=B.copy(), y=pi_B),
-                history=History(f=hist_f, x=hist_basis, meta={"enter_leave": hist_pivots})
+                lp=LPExtras(basis=B.copy(), dual=pi_B),
+                history=history,
+                counts={"nit": iters}
             )
             break
 

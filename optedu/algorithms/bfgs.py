@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Callable, Dict, Any, Literal
 import numpy as np
 
-from ..utils.types import History, ensure_array          # History: dict-like recorder with .append(...)
+from ..utils.types import History, ensure_array          # History: a plain dict of lists (f, x, grad_norm, step, meta)
 from .linesearch import backtracking_armijo, exact_line_search
 from ..utils.types import AlgoResult
 
@@ -28,11 +28,10 @@ def bfgs(
     maxit: int = 1000,            # iteration cap
     tol: float = 1e-8,            # ||∇f|| stopping tolerance
     safeguard: bool = False,       # if True, safeguard direction to ensure descent
-    step_policy: StepPolicy = "exact",   # default: exact line search if usable, else Armijo
+    step: StepPolicy = "exact",   # default: exact line search if usable, else Armijo
     c1: float = 1e-4,             # Armijo parameter
-    rho: float = 0.5,             # backtracking contraction
+    rho: float = 0.5,             # backtracking contraction (not the rho_k of the BFGS update)
     t0: float = 1.0,              # initial trial step
-    step: Any = None             # Not used in BFGS. Just for unified signature.
 ) -> Dict[str, Any]:
     """
     BFGS with inverse-Hessian approximation H_k:
@@ -57,6 +56,9 @@ def bfgs(
         }
     """
 
+    if step not in ("exact", "armijo"):
+        raise ValueError(f"step must be 'exact' or 'armijo', got {step!r}")
+
     # -------------------------------- [S4] Initialization --------------------------------
     x: Array = ensure_array(x0)        # current iterate x_k
     n = x.size
@@ -69,10 +71,11 @@ def bfgs(
     ng = float(np.linalg.norm(g))      # gradient norm
     status = "maxit"                    # default status (may change to "converged" later)
 
-    history.append(x=x.copy(), f=fx, grad_norm=ng)  # initial log (no step yet)
+    history["f"] = [fx]
+    history["x"] = [x.copy()]
+    history["grad_norm"] = [ng]
+    history["step"] = [None]           # no step taken to get to x_0
     nit = 0 # Iteration counter
-    njev = 1 # gradient evaluations
-    nfev = 1 # function evaluations
 
 
     # --------------------------------- Main iteration loop ---------------------------------
@@ -89,17 +92,16 @@ def bfgs(
             p = -g
 
         # ------------------------------------ [S4] Step-size -----------------------------------
-        # Try exact line search; if invalid or step_policy='armijo', use Armijo.
+        # Try exact line search; if it gives no usable step, or step='armijo', use Armijo.
         t = None
-        if step_policy == "exact":
-            try:
-                t_candidate = float(exact_line_search(f, x, p))
-                if np.isfinite(t_candidate) and t_candidate > 0.0:
-                    t = t_candidate
-            except Exception:
+        if step == "exact":
+            t, nstep = exact_line_search(f, x, p)
+            nfev += nstep
+            if not (np.isfinite(t) and t > 0.0):
                 t = None
-        if t is None or step_policy == "armijo":
-            t = backtracking_armijo(f, grad, x, p, c1=c1, rho=rho, t0=t0)
+        if t is None:
+            t, nstep = backtracking_armijo(f, grad, x, p, c1=c1, rho=rho, t0=t0)
+            nfev += nstep; njev += 1   # Armijo also evaluates grad(x) once
 
         # ------------------------------------ [S4] Update --------------------------------------
         x_new = x + t * p
@@ -123,7 +125,10 @@ def bfgs(
 
         # Advance state and log
         x, fx, g, ng = x_new, fx_new, g_new, ng_new
-        history.append(x=x.copy(), f=fx, grad_norm=ng, step=float(t))
+        history["x"].append(x.copy())
+        history["f"].append(fx)
+        history["grad_norm"].append(ng)
+        history["step"].append(float(t))
 
         # ------------------------------- [S4] Stopping (post-update) ----------------------------
         if ng <= tol:
