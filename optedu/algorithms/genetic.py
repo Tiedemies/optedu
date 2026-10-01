@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Callable, Dict, Any, Sequence, Tuple, Optional
 import numpy as np
 
-from ..utils.types import History, AlgoResult  # dict-like recorder with .append(...)
+from ..utils.types import History, AlgoResult  # History: a plain dict of lists
 
 Array   = np.ndarray
 Bounds  = Sequence[Tuple[float, float]]
@@ -65,7 +65,6 @@ def genetic_minimize(
     p_mut: float = 0.1,
     elitism: bool = True,
     rng: Optional[np.random.Generator] = None,
-    step: Any = None  # Not used in GA. Just for unified signature.
 ) -> Dict[str, Any]:
     """
     Genetic Algorithm (GA) following Chapter 6 §6.2.1 (7-step scheme).
@@ -107,7 +106,6 @@ def genetic_minimize(
     hi = bounds_arr[:, 1]
     if not np.all(hi >= lo):
         raise ValueError("Each bound must satisfy hi >= lo.")
-    dim = lo.size
 
     # Mutation scale: fraction of box width (simple, effective default)
     mut_scale = 0.1 * (hi - lo)

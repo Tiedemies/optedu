@@ -1,10 +1,15 @@
 from __future__ import annotations
-from typing import TypedDict, Dict, List, Any, Optional, Literal
+from typing import TypedDict, Dict, List, Any, Literal
 import numpy as np
 
 Status = Literal["converged", "maxit", "infeasible", "unbounded", "failed"]
 
 class History(TypedDict, total=False):
+    # A plain dict of lists (TypedDict only documents the keys; there are no methods).
+    # Contract used by all algorithms:
+    #   - entry 0 is the starting point; then one entry per logged iteration
+    #   - x and f always have the same length (LP solvers store only f; bases go in meta)
+    #   - anything algorithm-specific goes in meta
     # Iteration-aligned time series (same length if present)
     f: List[float]                 # objective values over iterations (best-so-far or per-iterate, doc per algo)
     x: List[np.ndarray]            # iterates (or best-so-far positions); large objects ok if pedagogy needs it

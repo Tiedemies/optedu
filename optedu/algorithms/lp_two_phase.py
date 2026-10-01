@@ -1,4 +1,4 @@
-# optedu/algorithms/lp/two_phase.py
+# optedu/algorithms/lp_two_phase.py
 # -------------------------------------------------------------------
 # Two-phase orchestration that comports with §3.3.2 in the material:
 #   Phase I: build auxiliary problem min 1^T a  s.t. A x + I a = b (after row sign normalization),
@@ -7,13 +7,13 @@
 #
 # Pedagogical notes:
 #   • We *only* use the page-43 simplex as a black box.
-#   • If Phase II is unbounded, we catch UnboundedSimplex and return a witness ray d with A d = 0,
-#     d feasible (nonnegativity preserved along the ray), and c^T d < 0 (for MIN).
+#   • If Phase II is unbounded, the simplex returns status "unbounded" with a witness ray
+#     result["lp"]["direction"] = d: A d = 0, d >= 0 (feasible along the ray) and c^T d < 0 (for MIN).
 # -------------------------------------------------------------------
 
 from __future__ import annotations
 import numpy as np
-from typing import Callable, Dict, Any, List, Tuple
+from typing import Any, List
 from ..utils.types import AlgoResult
 from .lp_simplex import simplex_standard
 from ..problems.lp_standardize import to_standard_form
@@ -42,50 +42,27 @@ def _build_phase1(A: np.ndarray, b: np.ndarray) -> tuple[np.ndarray, np.ndarray,
     return A1, b1, c1, x_cols, a_cols
 
 
-def _extract_final_basis(info: Dict[str, Any]) -> List[int]:
-    bases = info.get("basis", None)
-    if bases is None or len(bases) == 0:
-        raise RuntimeError("simplex_standard must return info['basis'] with at least one entry.")
-    return list(map(int, list(bases[-1])))
-
-
-# Minimal cleanup: pivot out zero-valued artificials if we can (keeps feasibility)
-def _pivot_out_zero_artificials(A: np.ndarray, b: np.ndarray, basis: List[int], a_cols: List[int], tol: float) -> List[int]:
-    m, n = A.shape
-    B = np.array(basis, dtype=int)
-    # Current basic values for this basis:
-    A_B = A[:, B]
-    try:
-        x_B = np.linalg.solve(A_B, b)
-    except np.linalg.LinAlgError:
-        x_B = np.zeros(m)
-
+# (§3.3.2) After Phase I some artificials may still be basic, at value zero (degenerate case).
+# For each such row i, look at row i of the tableau B^{-1} A. Any original column with a
+# nonzero entry there can replace the artificial (a degenerate pivot: x does not change).
+# If there is no such column, constraint i is a combination of the others (redundant) and is dropped.
+def _drive_out_artificials(A1: np.ndarray, basis: List[int], n: int, tol: float) -> tuple[List[int], List[int]]:
+    """Return (basis with only original columns, indices of the constraint rows to keep)."""
+    m = A1.shape[0]
+    B = [int(j) for j in basis]
+    keep = []
     for i in range(m):
-        if B[i] in a_cols and abs(x_B[i]) <= tol:
-            # Try bring in any original nonbasic column with nonzero in this row
-            nonbasic = [j for j in range(n) if j not in set(B)]
-            for j in nonbasic:
-                if abs(A[i, j]) > tol:
-                    # page-43 single step: direction & ratio test
-                    try:
-                        d_B = -np.linalg.solve(A_B, A[:, j])
-                    except np.linalg.LinAlgError:
-                        continue
-                    mask = d_B < -tol
-                    if not np.any(mask):
-                        continue
-                    ratios = np.full(m, np.inf)
-                    ratios[mask] = x_B[mask] / (-d_B[mask])
-                    k = int(np.argmin(ratios))
-                    if not np.isfinite(ratios[k]):
-                        continue
-                    theta = ratios[k]
-                    x_B = x_B + theta * d_B
-                    x_B[k] = theta
-                    B[k] = j
-                    A_B = A[:, B]  # refresh
-                    break
-    return list(map(int, list(B)))
+        if B[i] < n:                       # an original column is basic in row i: nothing to do
+            keep.append(i)
+            continue
+        # Row i of the tableau: e_i^T A_B^{-1} A  (only the original columns matter)
+        row_i = np.linalg.solve(A1[:, B].T, np.eye(m)[i]) @ A1[:, :n]
+        candidates = [j for j in range(n) if j not in B and abs(row_i[j]) > tol]
+        if candidates:
+            B[i] = candidates[0]           # degenerate pivot: artificial leaves, column j enters
+            keep.append(i)
+        # else: redundant constraint -> row i is not kept
+    return [B[i] for i in keep], keep
 
 def solve_two_phase_generic(
     A: np.ndarray,
@@ -98,8 +75,7 @@ def solve_two_phase_generic(
     ub: Any = None,
     tol: float = 1e-9,
     maxit: int = 10000,
-    step: Any = None  # Not used in LP. Just for unified signature.
-) -> tuple[np.ndarray, Dict[str, Any]]:
+) -> AlgoResult:
     """
     Solve a general LP via the two-phase method (per §3.3.2),
     using the same page-43 simplex in both phases. Returns either an optimal
@@ -110,27 +86,40 @@ def solve_two_phase_generic(
     A, b, c : original LP data, with n variables and m constraints
     senses  : list of length m with entries in {"le","eq","ge"}
     objective : "min" (default) or "max"
-    lb, ub : arrays of length n with lower/upper bounds. Use:
-             - lb[i] = -np.inf to indicate no lower bound
+    lb, ub : arrays of length n with lower/upper bounds. Default lb = 0 (x >= 0, the course
+             convention) and ub = +inf. Use:
+             - lb[i] = -np.inf to indicate no lower bound (free variable if also ub[i] = +inf)
              - ub[i] = +np.inf to indicate no upper bound
     tol : tolerance for feasibility and optimality
     maxit : maximum number of simplex iterations
 
     Returns
     -------
-    x_opt, info
-      x_opt : ndarray or None if infeasible
-      info  : dict with keys:
-        - status : "optimal", "infeasible", or "unbounded"
-        - f      : optimal objective value (or inf if infeasible)
-        - history: simplex history object (or None if infeasible)
-        - counts : {"nit": int, "nfev": int}
+    AlgoResult with status "converged", "infeasible", "unbounded" or "maxit".
+    x, f and (when unbounded) the ray result["lp"]["direction"] are in the ORIGINAL variables
+    and objective sense; the standard-form solution z is kept in result["extra"]["standard_x"].
     """
+    if lb is None:
+        lb = np.zeros(len(c))                  # course convention: x >= 0
     A_std, b_std, c_std, info_std = to_standard_form(A=A, b=b, c=c, senses=senses,
                                                     objective=objective,
                                                     lb=lb, ub=ub
                                                     )
-    return solve_two_phase(A_std, b_std, c_std, tol=tol, maxit=maxit)
+    result = solve_two_phase(A_std, b_std, c_std, tol=tol, maxit=maxit)
+
+    # Map the standard-form solution z back to the original problem.
+    reconstruct = info_std["reconstruct"]
+    if result.get("x") is not None:
+        z = result["x"]
+        sign = -1.0 if objective.lower().startswith("max") else 1.0   # max problems were solved as min of -c
+        result["x"] = reconstruct(z)
+        result["f"] = sign * (float(c_std @ z) + info_std["objective_offset"])
+        result["extra"] = {"standard_x": z}
+    if result["status"] == "unbounded":
+        # reconstruct is affine (x = M z + shift), so a ray d in z maps to M d = reconstruct(d) - reconstruct(0)
+        d = result["lp"]["direction"]
+        result["lp"]["direction"] = reconstruct(d) - reconstruct(np.zeros_like(d))
+    return result
 
 
 def solve_two_phase(
@@ -140,8 +129,7 @@ def solve_two_phase(
     *,
     tol: float = 1e-9,
     maxit: int = 10000,
-    step: Any = None  # Not used in LP. Just for unified signature.
-) -> tuple[np.ndarray, Dict[str, Any]]:
+) -> AlgoResult:
     """
     Solve min c^T x s.t. A x = b, x >= 0 via the two-phase method (per §3.3.2),
     using the same page-43 simplex in both phases. Returns either an optimal
@@ -155,25 +143,21 @@ def solve_two_phase(
     A1, b1, c1, x_cols, a_cols = _build_phase1(A2, b2)
     basis1_init = a_cols.copy()                  # artificial identity basis (feasible)
 
-    # print("--- Phase I: Auxiliary Problem ---")
     first_result = simplex_standard(A1, b1, c1, basis=basis1_init, tol=tol, maxit=maxit)
     x1 = first_result["x"]
     phase1_value = float(np.sum(x1[n:]))        # sum of artificials at optimum
 
     if phase1_value > max(tol, 1e-8):
         # Infeasible original LP
-        return AlgoResult(status="infeasible", x=None, f=np.inf, history=None, counts={"nit": 0, "nfev": 0})
+        return AlgoResult(status="infeasible", x=None, f=np.inf, history=first_result["history"],
+                          counts=first_result["counts"],
+                          message=f"Phase I optimum {phase1_value:.3g} > 0: the LP has no feasible point.")
 
     # ----- Phase I → Phase II: get a feasible basis for Ax=b, x>=0 -----
-    basis1 = first_result["lp"]["basis"] if "lp" in first_result else basis1_init
-    basis2 = _pivot_out_zero_artificials(A2, b2, basis1, a_cols, tol)
-    # Prefer original columns in the Phase II warm start
-    basis2_orig = [j for j in basis2 if j < n]
-    if len(basis2_orig) < m:
-        need = m - len(basis2_orig)
-        extras = [j for j in basis2 if j not in basis2_orig]
-        basis2_orig += extras[:need]
-    # print(f"Phase II basis (indices): {basis2_orig}")
+    basis1 = first_result["lp"]["basis"]
+    basis2, keep = _drive_out_artificials(A1, basis1, n, tol)
+    A2, b2 = A2[keep, :], b2[keep]               # drop redundant constraints (if any)
+
     # ----- Phase II: run the same simplex on the original objective -----
-    return simplex_standard(A2, b2, c, basis=basis2_orig, tol=tol, maxit=maxit)
+    return simplex_standard(A2, b2, c, basis=basis2, tol=tol, maxit=maxit)
     

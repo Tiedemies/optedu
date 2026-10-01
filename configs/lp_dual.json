@@ -1,0 +1,23 @@
+{
+  "title": "Dual Simplex on equality LP (easy dual-feasible start)",
+  "problem": {
+    "target": "optedu.problems.lp:LP",
+    "kwargs": {
+      "A": [[3, -2, -1, 0],
+            [1, 2, 0, -1]
+        ],
+      "b": [5, 4],
+      "c": [1, 1, 0, 0],
+      "sense": "min",
+      "senses": ["eq", "eq"]
+    }
+  },
+  "algorithm": {
+    "target": "optedu.algorithms.dual_simplex:dual_simplex_standard",
+    "kwargs": {
+      "tol": 1e-9,
+      "maxit": 10000,
+      "basis": [2, 3]
+    }
+  }
+}

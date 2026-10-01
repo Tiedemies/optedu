@@ -3,22 +3,34 @@ from typing import Callable
 from ..utils.types import ensure_array
 
 def backtracking_armijo(f: Callable, grad: Callable, x: np.ndarray, d: np.ndarray,
-                        c1: float = 1e-4, rho: float = 0.5, t0: float = 1.0) -> float:
+                        c1: float = 1e-4, rho: float = 0.5, t0: float = 1.0,
+                        max_backtracks: int = 50) -> tuple[float, int]:
+    """
+    Armijo backtracking: shrink t <- rho * t until f(x + t d) <= f(x) + c1 * t * grad(x)^T d.
+    Returns (t, number of f evaluations used).
+    If the condition still fails after max_backtracks shrinks, the last (tiny) t is returned.
+    """
     x = ensure_array(x); d = ensure_array(d)
     t = float(t0)
     fx = float(f(x))
     neval = 1
     gTd = float(grad(x).dot(d))
     if gTd >= 0:
-        raise AssertionError("Direction must be a descent direction for Armijo backtracking.")
-    while True:
-        neval+=1
+        raise ValueError("Direction must be a descent direction for Armijo backtracking.")
+    for _ in range(max_backtracks):
+        neval += 1
         xn = x + t*d
         if f(xn) <= fx + c1*t*gTd:
             return t, neval
         t *= rho
+    return t, neval
 
 def exact_quadratic_step(Q: np.ndarray, gradx: np.ndarray, d: np.ndarray) -> float:
+    """
+    Exact step for a quadratic f(x) = 0.5 x^T Q x - c^T x along direction d:
+        phi(t) = f(x + t d)  is minimized at  t* = - (grad f(x)^T d) / (d^T Q d).
+    If d^T Q d <= 0 the quadratic is not bounded below along d; we then return t = 1.
+    """
     num = gradx.dot(d); den = d.dot(Q @ d)
     if den <= 0: return 1.0
     return - num / den
@@ -28,7 +40,7 @@ def exact_quadratic_step(Q: np.ndarray, gradx: np.ndarray, d: np.ndarray) -> flo
 def _golden_section(phi, a, b, c, tol=1e-16, maxit=200):
     """
     Golden-section search on [a,c]. 'b' is a point inside (not necessarily the minimizer).
-    Returns t*, phi(t*). Assumes phi is unimodal on [a,c].
+    Returns t*, phi(t*), number of phi evaluations. Assumes phi is unimodal on [a,c].
     """
     a = float(a); c = float(c)
     invphi  = (np.sqrt(5.0) - 1.0) / 2.0    # 1/phi
@@ -39,27 +51,29 @@ def _golden_section(phi, a, b, c, tol=1e-16, maxit=200):
     x2 = a + invphi  * (c - a)
     f1 = float(phi(x1))
     f2 = float(phi(x2))
+    neval = 2
 
     for _ in range(maxit):
         if abs(c - a) <= tol * (abs(a) + abs(c) + 1.0):
             break
         if f1 < f2:
-            c, f2 = x2, f2
-            x2 = x1
-            f2 = f1
+            # minimum lies in [a, x2]: the old x1 becomes the new x2, evaluate one new x1
+            c = x2
+            x2, f2 = x1, f1
             x1 = a + invphi2 * (c - a)
-            f1 = float(phi(x1))
+            f1 = float(phi(x1)); neval += 1
         else:
-            a, f1 = x1, f1
-            x1 = x2
-            f1 = f2
+            # minimum lies in [x1, c]: the old x2 becomes the new x1, evaluate one new x2
+            a = x1
+            x1, f1 = x2, f2
             x2 = a + invphi * (c - a)
-            f2 = float(phi(x2))
+            f2 = float(phi(x2)); neval += 1
 
     # pick best among sampled endpoints
     candidates = [(a, float(phi(a))), (x1, f1), (x2, f2), (c, float(phi(c)))]
+    neval += 2
     t_star, f_star = min(candidates, key=lambda z: z[1])
-    return float(t_star), float(f_star)
+    return float(t_star), float(f_star), neval
 
 
 def exact_line_search(
@@ -74,10 +88,9 @@ def exact_line_search(
     """
     Minimize phi(t) = f(x + t d) with t >= 0 using a robust bracket + golden-section.
     1) Shrink t until phi(t) < phi(0). 2) Expand forward to bracket minimum. 3) Golden-section on [a,c].
-    Returns t* (float).
+    Returns (t*, number of f evaluations used). t* = 0.0 means no decrease was found.
     """
     x = ensure_array(x); d = ensure_array(d)
-    nfeval = 0
     def phi(t):
         # enforce t >= 0
         t = max(0.0, float(t))
@@ -88,14 +101,15 @@ def exact_line_search(
     # --- Phase 1: find an initial decrease from 0 by shrinking t ---
     t = float(abs(t_init))
     fb = phi(t)
+    nfeval = 2
     n_shrink = 0
     while fb >= fa and t > min_step and n_shrink < maxit:
         t *= shrink
-        fb = phi(t);nfeval+=1
+        fb = phi(t); nfeval += 1
         n_shrink += 1
     if fb >= fa:
         # Could not find a decrease: as a safety, return zero step (caller can fall back to Armijo)
-        return 0.0
+        return 0.0, nfeval
 
     # Now we have 0 = a < b = t with phi(b) < phi(a)
     a = 0.0; fa = fa
@@ -104,17 +118,17 @@ def exact_line_search(
     # --- Phase 2: expand forward to find c with phi(c) > phi(b) ---
     step = t
     c = b + step
-    fc = phi(c)
+    fc = phi(c); nfeval += 1
     n_expand = 0
     while fc < fb and n_expand < maxit:
         a, fa = b, fb
         b, fb = c, fc
         step *= grow
         c = b + step
-        fc = phi(c);nfeval+=1
+        fc = phi(c); nfeval += 1
         n_expand += 1
 
     # We have a bracket [a, c] with a < b < c and phi(b) <= phi(a), phi(b) <= phi(c)
-    t_star, _ = _golden_section(phi, a, b, c, tol=tol, maxit=maxit)
-    return float(t_star), nfeval
+    t_star, _, n_golden = _golden_section(phi, a, b, c, tol=tol, maxit=maxit)
+    return float(t_star), nfeval + n_golden
 

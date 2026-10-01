@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Callable, Dict, Any
 import numpy as np
 
-from ..utils.types import History, ensure_array, AlgoResult  # History: dict-like recorder with .append(...)
+from ..utils.types import History, ensure_array, AlgoResult  # History: a plain dict of lists
 from .linesearch import backtracking_armijo
 
 Array = np.ndarray
@@ -77,6 +77,7 @@ def newton(
 
     nit = 0
     nhev = 0
+    fallback_iters = []   # iterations where the Hessian was singular and -grad was used instead
 
     # --------------------------------- Main iteration loop ---------------------------------
     while nit < maxit:
@@ -97,13 +98,15 @@ def newton(
         try:
             d = -np.linalg.solve(Huse, g)
         except np.linalg.LinAlgError:
-            # Fall back: if Hessian is singular, use steepest descent direction
+            # Fall back: if Hessian is singular, use steepest descent direction (and record it)
             d = -g
+            fallback_iters.append(nit)
 
         # ------------------------------------ [S4] Step-size -----------------------------------
         if damped:
             # Damped Newton: Armijo backtracking to guarantee sufficient decrease
-            t = backtracking_armijo(f, grad, x, d, c1=c1, rho=rho, t0=t0)
+            t, nstep = backtracking_armijo(f, grad, x, d, c1=c1, rho=rho, t0=t0)
+            nfev += nstep; njev += 1   # Armijo also evaluates grad(x) once
         else:
             # Undamped Newton: full step
             t = 1.0
@@ -129,7 +132,7 @@ def newton(
         nit += 1
 
     # ------------------------------------ [S4] Outputs ----------------------------------------
-
+    history["meta"] = {"steepest_descent_fallback": fallback_iters}
     return AlgoResult(
         status=status,
         x=x,

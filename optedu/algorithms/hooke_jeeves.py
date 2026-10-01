@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Callable, Dict, Any
 import numpy as np
 
-from ..utils.types import History, ensure_array, AlgoResult  # History is the dict-like recorder used across the course
+from ..utils.types import History, ensure_array, AlgoResult  # History: a plain dict of lists used across the course
 
 Array = np.ndarray
 Objective = Callable[[Array], float]
@@ -26,7 +26,6 @@ def _explore(f: Objective, x: Array, delta: Array) -> tuple[Array, float, int]:
     nfev = 0
     fx = float(f(x)); nfev += 1
     x_new = x.copy()
-    improved = False
 
     for i in range(x.size):
         # try +delta_i
@@ -34,14 +33,14 @@ def _explore(f: Objective, x: Array, delta: Array) -> tuple[Array, float, int]:
         trial[i] += delta[i]
         f_trial = float(f(trial)); nfev += 1
         if f_trial < fx:
-            x_new, fx, improved = trial, f_trial, True
+            x_new, fx = trial, f_trial
         else:
             # try -delta_i
             trial = x_new.copy()
             trial[i] -= delta[i]
             f_trial = float(f(trial)); nfev += 1
             if f_trial < fx:
-                x_new, fx, improved = trial, f_trial, True
+                x_new, fx = trial, f_trial
         # move to next coordinate using the best found so far (greedy coordinate exploration)
 
     return x_new, fx, nfev
@@ -56,7 +55,6 @@ def hooke_jeeves(
     tol: float = 1e-6,          # terminate when all step lengths are <= tol
     delta0: float = 0.5,        # initial step length for all coordinates
     theta: float = 0.5,         # reduction factor for step length (0 < theta < 1)
-    step: Any = None          # Not used in HJ. Just for unified signature.
 ) -> Dict[str, Any]:
     """
     Hooke–Jeeves pattern search (derivative-free).
@@ -81,13 +79,22 @@ def hooke_jeeves(
     # Step lengths per coordinate (vector), all start at delta0
     delta = np.full(n, float(delta0))
 
-    # History (single source of truth)
-    history = History()
+    # History lists (one entry per logged event); packed into a History at the end
+    x_history = []
+    f_history = []
+    step_history = []
+    op_history = []
+
+    def log(x, fx, op):
+        x_history.append(x.copy())
+        f_history.append(float(fx))
+        step_history.append(float(np.max(delta)))
+        op_history.append(op)
 
     # Evaluate start
     x_base = x0.copy()
     f_base = float(f(x_base)); nfev = 1
-    history.append(x=x_base.copy(), f=f_base, step=float(np.max(delta)), meta={"op": "init"})
+    log(x_base, f_base, "init")
 
     nit = 0
     status = "maxit"
@@ -106,12 +113,7 @@ def hooke_jeeves(
 
         if f_explore < f_base:
             # Improvement found by exploration
-            history.append(
-                x=x_explore.copy(),
-                f=float(f_explore),
-                step=float(np.max(delta)),
-                meta={"op": "explore"}
-            )
+            log(x_explore, f_explore, "explore")
 
             # -----------------------
             # Pattern move (accel.)
@@ -124,12 +126,7 @@ def hooke_jeeves(
             if f_pattern < f_explore:
                 # Accept pattern move: accelerated progress along d
                 x_base, f_base = x_pattern, f_pattern
-                history.append(
-                    x=x_base.copy(),
-                    f=float(f_base),
-                    step=float(np.max(delta)),
-                    meta={"op": "pattern"}
-                )
+                log(x_base, f_base, "pattern")
             else:
                 # No gain from pattern; accept exploration result as new base
                 x_base, f_base = x_explore, f_explore
@@ -140,12 +137,7 @@ def hooke_jeeves(
             # No exploratory improvement: reduce step length(s)
             # --------------------------------------------------
             delta *= float(theta)
-            history.append(
-                x=x_base.copy(),
-                f=float(f_base),
-                step=float(np.max(delta)),
-                meta={"op": "reduce"}
-            )
+            log(x_base, f_base, "reduce")
 
         nit += 1
 
@@ -153,6 +145,6 @@ def hooke_jeeves(
         status=status,
         x=x_base,
         f=f_base,
-        history=history,
+        history=History(f=f_history, x=x_history, step=step_history, meta={"op": op_history}),
         counts={"nit": nit, "nfev": nfev}
     )

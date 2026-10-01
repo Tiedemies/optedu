@@ -24,7 +24,7 @@ def pso_minimize(f: Callable[[np.ndarray], float], *, bounds: Bounds, n_particle
     hi = np.array([b[1] for b in bounds], float)
     ## 1: Initialize particles' positions and velocities inside the bounds
     X = rng.random((n_particles, dim)) * (hi - lo) + lo
-    ## Speeds are normized to 0.1 times the range of each dimension
+    ## Initial velocities: small Gaussian noise (standard deviation 0.1 in every dimension)
     V = rng.normal(scale=0.1, size=(n_particles, dim))
 
     pbest = X.copy()
@@ -34,7 +34,7 @@ def pso_minimize(f: Callable[[np.ndarray], float], *, bounds: Bounds, n_particle
     ## Initialize global best
     gbest = pbest[g_idx].copy()
     gbest_val = float(pbest_val[g_idx])
-    hist_x = []
+    hist_x = [gbest.copy()]
     hist_f = [gbest_val]
     # We run for a fixed number of iterations
     for _ in range(iters):
@@ -51,12 +51,12 @@ def pso_minimize(f: Callable[[np.ndarray], float], *, bounds: Bounds, n_particle
         improve = vals < pbest_val
         pbest[improve] = X[improve]
         pbest_val[improve] = vals[improve]
-        ## We add the best point in this iteration to the history
-        hist_x.append(gbest.copy())
         g_idx = int(np.argmin(pbest_val))
         if pbest_val[g_idx] < gbest_val:
             gbest_val = float(pbest_val[g_idx])
             gbest = pbest[g_idx].copy()
+        ## We add the best point so far to the history
+        hist_x.append(gbest.copy())
         hist_f.append(gbest_val)
     ### Return
 

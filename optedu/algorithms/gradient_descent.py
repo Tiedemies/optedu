@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Callable, Dict, Any, Literal
 import numpy as np
 
-from ..utils.types import History, ensure_array, AlgoResult  # History is the dict-like recorder used across the course
+from ..utils.types import History, ensure_array, AlgoResult  # History: a plain dict of lists used across the course
 from .linesearch import backtracking_armijo, exact_line_search
 
 Array = np.ndarray
@@ -25,7 +25,9 @@ def gradient_descent(
     # ------------------------ [S4] Inputs / Hyperparameters ------------------------
     maxit: int = 2000,              # hard iteration cap (safety net)
     tol: float = 1e-8,              # gradient-norm tolerance for convergence
-    step: StepPolicy = "exact",  # default: attempt exact line search first
+                                    # (line searches compare f values, so near the optimum round-off
+                                    #  in f limits how small ||grad f|| can get; ~1e-6 is safe)
+    step: StepPolicy = "exact",    # default: attempt exact line search first
     # Armijo parameters (used if step ='armijo' or exact step is unusable)
     c1: float = 1e-4,
     rho: float = 0.5,
@@ -45,6 +47,9 @@ def gradient_descent(
           "counts": {"nit": int}  # iterations performed (successful updates)
         }
     """
+
+    if step not in ("exact", "armijo"):
+        raise ValueError(f"step must be 'exact' or 'armijo', got {step!r}")
 
     # -------------------------------- [S4] Initialization --------------------------------
     x: Array = ensure_array(x0)     # current iterate x_k
@@ -82,22 +87,19 @@ def gradient_descent(
 
         # ------------------------------------ [S4] Step-size -----------------------------------
         # Default policy tries an exact line search; if unusable, we fall back to Armijo.
-        # exact_line_search is assumed to have signature exact_line_search(f, x, d).
+        # Both line searches return (t, number of f evaluations they used).
         t = None
-        nstep = 0
         if step == "exact":
-            try:
-                t_candidate,nstep = float(exact_line_search(f, x, d))
-                if np.isfinite(t_candidate) and t_candidate > 0.0:
-                    t = t_candidate
-            except Exception:
-                t = None
+            t, nstep = exact_line_search(f, x, d)
+            nfev += nstep
+            if not (np.isfinite(t) and t > 0.0):
+                t = None   # no usable exact step (e.g. no decrease found) -> Armijo below
 
-        if t is None or step == "armijo":
+        if t is None:
             # Armijo backtracking uses (f, grad, x, d, c1, rho, t0).
             # We rely on the linesearch helper; we do not try to replicate its internal logic here.
             t, nstep = backtracking_armijo(f, grad, x, d, c1=c1, rho=rho, t0=t0)
-        nfev += nstep
+            nfev += nstep; njev += 1   # Armijo also evaluates grad(x) once
         # ------------------------------------ [S4] Update --------------------------------------
         # Apply the step: x_{k+1} = x_k + t_k d_k
         x = x + t * d

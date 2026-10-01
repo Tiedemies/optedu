@@ -11,7 +11,7 @@
 #   - returns mapping to reconstruct original variables and objective offset
 #
 # Output:
-#   c_std, A_std, b_std, info
+#   A_std, b_std, c_std, info
 # where info has:
 #   - 'reconstruct(x_std) -> x_orig'  : closure to map standard vars back
 #   - 'objective_offset'              : constant added to the objective by shifts
@@ -47,7 +47,7 @@ def to_standard_form(
 
     Returns
     -------
-    c_std, A_std, b_std, info
+    A_std, b_std, c_std, info
     """
     c = np.asarray(c, dtype=float).copy()
     A = np.asarray(A, dtype=float).copy()
@@ -74,7 +74,7 @@ def to_standard_form(
     # We'll build a new variable vector z >= 0 from x using:
     #   (a) finite lower bound:   x_j = y_j + L_j, y_j >= 0
     #   (b) free variable:        x_j = y_j^+ - y_j^- with y^+, y^- >= 0
-    #   (c) finite upper bound only: convert into constraint x_j <= U_j, keep y_j >= 0
+    #   (c) finite upper bound only: x_j = U_j - y_j, y_j >= 0   (flip the variable)
     #
     # Track how each original variable j maps to components in z.
     col_meta: List[Dict[str, Any]] = []  # one entry per column in A_std
@@ -92,15 +92,12 @@ def to_standard_form(
         if np.isfinite(Lj):  # shift to zero lower bound: x = y + L
             # Adjust objective constant: c^T x = c^T (y + L) = c^T y + c_j * L
             shift_const += cj * Lj
-            Aj_const = Aj * 0.0  # placeholder
             # Constraint RHS b must account for the shift: A[:,j]*(y_j + L) -> A[:,j]*y_j and b -= A[:,j]*L
             b -= Aj * Lj
             # New variable y >= 0
             A_work.append(Aj)           # column for y
             c_work.append(cj)
             col_meta.append({"orig": j, "type": "shifted", "sign": +1.0, "L": Lj})
-            # Now lower bound handled; update L to 0 for logic that follows
-            Lj = 0.0
         else:
             # No finite lower bound given; check if free
             if not np.isfinite(Uj):
@@ -109,35 +106,29 @@ def to_standard_form(
                 A_work.append(-Aj);        c_work.append(-cj); col_meta.append({"orig": j, "type": "free_minus","sign": -1.0})
                 continue
             else:
-                # lower bound -inf, upper finite: treat y = x (we'll add x <= U as extra row later)
-                A_work.append(Aj);         c_work.append(cj);  col_meta.append({"orig": j, "type": "nonneg_assumed", "sign": +1.0})
-
-        # At this point, we have a y_j >= 0 variable representing x_j (possibly shifted).
-        # If we also have a finite upper bound U, add a new constraint y_j <= U' where
-        # U' = U - L (if we had a shift).
-        if np.isfinite(Uj):
-            # Add a constraint row: e_j^T y <= U'  -> handled below when we build constraints.
-            pass
+                # lower bound -inf, upper finite: x = U - y with y >= 0
+                # c_j x = c_j U - c_j y   and   A[:,j] x = A[:,j] U - A[:,j] y
+                shift_const += cj * Uj
+                b -= Aj * Uj
+                A_work.append(-Aj);        c_work.append(-cj); col_meta.append({"orig": j, "type": "flipped", "sign": -1.0, "U": Uj})
+        # For shifted variables, a finite upper bound U becomes an extra row y_j <= U - L in Step S2 below.
 
     # Build preliminary A_y and c_y
     A_y = np.column_stack(A_work) if A_work else np.zeros((m, 0))
     c_y = np.asarray(c_work, dtype=float)
 
     # --- Step S2: encode variable upper bounds as extra constraints (<=) on y ---
-    # For each column in col_meta that represents a +1 of some original var j (shifted or nonneg_assumed),
-    # add row y_k <= U - L if U finite.
+    # For each shifted variable x_j = y_k + L_j with a finite upper bound U_j, add row y_k <= U_j - L_j.
     extra_rows = []
     extra_rhs = []
     for k, meta in enumerate(col_meta):
-        if meta["type"] in ("shifted", "nonneg_assumed"):
+        if meta["type"] == "shifted":
             j = meta["orig"]
-            Lj = lb[j] if np.isfinite(lb[j]) else 0.0
-            Uj = ub[j]
-            if np.isfinite(Uj):
+            if np.isfinite(ub[j]):
                 row = np.zeros(A_y.shape[1])
                 row[k] = 1.0
                 extra_rows.append(row)
-                extra_rhs.append(Uj - (Lj if np.isfinite(lb[j]) else 0.0))
+                extra_rhs.append(ub[j] - lb[j])
 
     if extra_rows:
         A_y = np.vstack([A_y, np.zeros((len(extra_rows), A_y.shape[1]))])  # grow rows
@@ -146,49 +137,23 @@ def to_standard_form(
         # put the extra_rows at the end rows
         A_y[-len(extra_rows):, :] = np.vstack(extra_rows)
 
-    # --- Step S3: convert all constraints to equalities with slacks (<=) or by multiplying (>=) ---
-    # We want: A_std z = b_std, z >= 0. For each "le": add slack s >= 0, for each "ge": multiply by (-1) then add slack.
-    rows = []
-    rhs = []
-    slack_cols = []
-    for i, s in enumerate(senses):
-        ai = A_y[i, :]
-        bi = b[i]
-        if s == "le":
-            # ai y + s = bi
-            rows.append(np.hstack([ai, np.ones(1)]))
-            rhs.append(bi)
-            slack_cols.append(1)  # added one slack
-            # augment columns for others: previous rows get zero in this column; done by construction
-            A_y = np.column_stack([A_y, np.zeros((A_y.shape[0], 1))])
-            A_y[i, -1] = 1.0
-        elif s == "ge":
-            # multiply by -1: (-ai) y <= -bi  -> (-ai) y + s = -bi
-            rows.append(np.hstack([-ai, np.ones(1)]))
-            rhs.append(-bi)
-            slack_cols.append(1)
-            A_y = np.column_stack([A_y, np.zeros((A_y.shape[0], 1))])
-            A_y[i, -1] = 1.0
-            A_y[i, :A_y.shape[1]-1] *= -1.0  # keep A_y in sync with rows (not strictly necessary later)
-        elif s == "eq":
-            # equality: no slack; we’ll put directly
-            rows.append(ai.copy())
-            rhs.append(bi)
-            slack_cols.append(0)
-        else:
+    # --- Step S3: convert all constraints to equalities with slacks ---
+    # We want: A_std z = b_std, z >= 0.
+    #   "le":  a_i y <= b_i   ->   a_i y + s_i = b_i
+    #   "ge":  a_i y >= b_i   ->  (-a_i) y + s_i = -b_i   (multiply by -1, then add a slack)
+    #   "eq":  kept as is, no slack
+    # Slack columns are placed after the y columns, one per inequality row.
+    slack_cols = [1 if s in ("le", "ge") else 0 for s in senses]
+    for s in senses:
+        if s not in ("le", "eq", "ge"):
             raise ValueError("senses entries must be in {'le','eq','ge'}")
-
-    # The loop above appended columns while iterating; simpler approach:
-    # Rebuild A_eq cleanly with slacks at the end.
-    # Count total slacks:
     total_slacks = sum(slack_cols)
-    A_core = A_y[:, :len(c_y)]  # columns from y/free splits
     # Build equality rows:
     A_eq_rows = []
     b_eq = []
     slack_counter = 0
     for i, s in enumerate(senses):
-        ai = A_core[i, :]
+        ai = A_y[i, :]
         bi = b[i]
         if s == "le":
             row = np.hstack([ai, np.zeros(total_slacks)])
@@ -214,7 +179,7 @@ def to_standard_form(
     #  - For each original j:
     #      * if free: x_j = z[k_plus] - z[k_minus]
     #      * if shifted: x_j = z[k] + L_j
-    #      * else (nonneg_assumed): x_j = z[k]
+    #      * if flipped: x_j = U_j - z[k]
     #  - Slacks ignored when reconstructing x (they correspond to constraints).
     def reconstruct(z: np.ndarray) -> np.ndarray:
         z = np.asarray(z, dtype=float)
@@ -229,8 +194,8 @@ def to_standard_form(
                 x[j] -= z[k]
             elif t == "shifted":
                 x[j] += z[k] + meta["L"]
-            elif t == "nonneg_assumed":
-                x[j] += z[k]
+            elif t == "flipped":
+                x[j] += meta["U"] - z[k]
             else:
                 raise RuntimeError("Unknown column meta type.")
         return x

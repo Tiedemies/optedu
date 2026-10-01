@@ -5,7 +5,10 @@ class Quadratic:
     def __init__(self, Q=None, c=None):
         if Q is None: Q = np.array([[2.0, 0.0],[0.0, 10.0]])
         if c is None: c = np.array([-2.0, -8.0])
-        self.Q = Q.astype(float); self.c = c.astype(float)
+        self.Q = np.asarray(Q, dtype=float); self.c = np.asarray(c, dtype=float)   # lists from JSON are fine
+        # Known minimizer (if Q is positive definite): grad f = Q x - c = 0  ->  x* = Q^{-1} c
+        self.x_star = np.linalg.solve(self.Q, self.c)
+        self.f_star = float(self.f(self.x_star))
     def f(self, x):
         x = np.asarray(x, dtype=float)
         return 0.5 * x.dot(self.Q @ x) - self.c.dot(x)

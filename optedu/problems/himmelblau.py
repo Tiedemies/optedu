@@ -1,6 +1,11 @@
 import numpy as np
 
 class Himmelblau:
+    # Four global minima, all with f* = 0; x_star is the one most demos converge to.
+    x_star = np.array([3.0, 2.0])
+    f_star = 0.0
+    all_minima = [(3.0, 2.0), (-2.805118, 3.131312), (-3.779310, -3.283186), (3.584428, -1.848126)]
+
     def f(self, x):
         x = np.asarray(x, dtype=float); x1, x2 = x[0], x[1]
         return (x1**2 + x2 - 11)**2 + (x1 + x2**2 - 7)**2
